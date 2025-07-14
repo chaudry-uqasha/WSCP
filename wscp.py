@@ -38,7 +38,7 @@ class CustomHandler(BaseHTTPRequestHandler):
             <html lang="en">
             <head>
                 <meta charset="UTF-8">
-                <title>🎉 Chaudry's Server</title>
+                <title>🎉 Personal Server</title>
                 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700&display=swap" rel="stylesheet">
                 <style>
                     body {{
@@ -99,7 +99,7 @@ class CustomHandler(BaseHTTPRequestHandler):
             </head>
             <body>
                 <h1>🎉 File Sharing Server</h1>
-                <p style="color: #ffff88;">🎊 Welcome to Chaudry's Server! 🎊</p>
+                <p style="color: #ffff88;">🎊 Welcome to your Server! 🎊</p>
         """
 
             if ALLOW_UPLOADS:
