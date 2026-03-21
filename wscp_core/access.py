@@ -151,7 +151,19 @@ def build_folder_tree(path, upload_root, upload_folder, is_path_visible_fn):
     return tree
 
 
-def get_folder_contents(path, upload_root, upload_folder, is_path_visible_fn, is_likely_text_file_fn):
+def get_folder_contents(
+    path,
+    upload_root,
+    upload_folder,
+    is_path_visible_fn,
+    is_likely_text_file_fn,
+    is_image_file_fn,
+    is_video_file_fn,
+    is_audio_file_fn,
+    is_pdf_file_fn,
+    is_word_file_fn,
+    is_sheet_file_fn,
+):
     items = []
     try:
         for item in sorted(os.listdir(path)):
@@ -174,6 +186,12 @@ def get_folder_contents(path, upload_root, upload_folder, is_path_visible_fn, is
                     pass
 
             is_text_file = (not is_dir) and is_likely_text_file_fn(item_path)
+            is_image = (not is_dir) and is_image_file_fn(item_path)
+            is_video = (not is_dir) and is_video_file_fn(item_path)
+            is_audio = (not is_dir) and is_audio_file_fn(item_path)
+            is_pdf = (not is_dir) and is_pdf_file_fn(item_path)
+            is_word = (not is_dir) and is_word_file_fn(item_path)
+            is_sheet = (not is_dir) and is_sheet_file_fn(item_path)
 
             items.append(
                 {
@@ -183,6 +201,12 @@ def get_folder_contents(path, upload_root, upload_folder, is_path_visible_fn, is
                     "size": size,
                     "date": date_str,
                     "is_text": is_text_file,
+                    "is_image": is_image,
+                    "is_video": is_video,
+                    "is_audio": is_audio,
+                    "is_pdf": is_pdf,
+                    "is_word": is_word,
+                    "is_sheet": is_sheet,
                 }
             )
     except PermissionError:

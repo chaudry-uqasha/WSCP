@@ -97,6 +97,63 @@ def stream_download(handler: BaseHTTPRequestHandler, file_path, download_name, c
             handler.send_error(500, f"Error: {e}")
 
 
+def stream_inline_media(handler: BaseHTTPRequestHandler, file_path, mime_type, chunk_size):
+    file_size = os.path.getsize(file_path)
+    range_header = handler.headers.get("Range")
+    start = 0
+    end = max(file_size - 1, 0)
+    status_code = 200
+
+    if range_header and range_header.startswith("bytes="):
+        try:
+            range_spec = range_header.split("=", 1)[1].strip()
+            if "," in range_spec:
+                raise ValueError("Multiple ranges not supported")
+
+            start_str, end_str = range_spec.split("-", 1)
+            if start_str:
+                start = int(start_str)
+                end = int(end_str) if end_str else end
+            else:
+                suffix_len = int(end_str)
+                if suffix_len <= 0:
+                    raise ValueError("Invalid suffix range")
+                start = max(file_size - suffix_len, 0)
+
+            if start < 0 or end < start or start >= file_size:
+                raise ValueError("Invalid byte range")
+            end = min(end, file_size - 1)
+            status_code = 206
+        except Exception:
+            handler.send_response(416)
+            handler.send_header("Content-Range", f"bytes */{file_size}")
+            handler.send_header("Accept-Ranges", "bytes")
+            handler.end_headers()
+            return
+
+    content_length = (end - start) + 1 if file_size > 0 else 0
+
+    handler.send_response(status_code)
+    handler.send_header("Content-type", mime_type)
+    handler.send_header("Accept-Ranges", "bytes")
+    handler.send_header("Content-Disposition", f"inline; filename=\"{os.path.basename(file_path)}\"")
+    handler.send_header("Content-Length", str(content_length))
+    if status_code == 206:
+        handler.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+    handler.end_headers()
+
+    with open(file_path, "rb") as file_obj:
+        if start:
+            file_obj.seek(start)
+        remaining = content_length
+        while remaining > 0:
+            chunk = file_obj.read(min(chunk_size, remaining))
+            if not chunk:
+                break
+            handler.wfile.write(chunk)
+            remaining -= len(chunk)
+
+
 def handle_get_request(handler: BaseHTTPRequestHandler, ctx: ServerContext):
     path = handler.path
 
@@ -155,6 +212,190 @@ def handle_get_request(handler: BaseHTTPRequestHandler, ctx: ServerContext):
             return True
 
         handler.send_error(404, "File not found")
+        return True
+
+    if path.startswith("/image"):
+        parsed = urlparse(path)
+        raw_path = parse_qs(parsed.query).get("path", [""])[0]
+        file_path = ctx.resolve_client_path_fn(unquote(raw_path))
+
+        if not file_path or not os.path.isfile(file_path):
+            handler.send_error(404, "File not found")
+            return True
+        if not ctx.is_target_allowed_fn(file_path):
+            handler.send_error(403, "Access denied")
+            return True
+
+        mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        if not mime_type.startswith("image/"):
+            handler.send_error(415, "Image preview is only supported for image files")
+            return True
+
+        try:
+            file_size = os.path.getsize(file_path)
+            handler.send_response(200)
+            handler.send_header("Content-type", mime_type)
+            handler.send_header("Content-Length", str(file_size))
+            handler.send_header("Content-Disposition", f"inline; filename=\"{os.path.basename(file_path)}\"")
+            handler.end_headers()
+
+            with open(file_path, "rb") as file_obj:
+                while True:
+                    chunk = file_obj.read(ctx.stream_chunk_size)
+                    if not chunk:
+                        break
+                    handler.wfile.write(chunk)
+        except Exception as e:
+            handler.send_error(500, f"Error: {e}")
+        return True
+
+    if path.startswith("/video"):
+        parsed = urlparse(path)
+        raw_path = parse_qs(parsed.query).get("path", [""])[0]
+        file_path = ctx.resolve_client_path_fn(unquote(raw_path))
+
+        if not file_path or not os.path.isfile(file_path):
+            handler.send_error(404, "File not found")
+            return True
+        if not ctx.is_target_allowed_fn(file_path):
+            handler.send_error(403, "Access denied")
+            return True
+
+        mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        if not mime_type.startswith("video/"):
+            handler.send_error(415, "Video preview is only supported for video files")
+            return True
+
+        try:
+            stream_inline_media(handler, file_path, mime_type, ctx.stream_chunk_size)
+        except Exception as e:
+            handler.send_error(500, f"Error: {e}")
+        return True
+
+    if path.startswith("/audio"):
+        parsed = urlparse(path)
+        raw_path = parse_qs(parsed.query).get("path", [""])[0]
+        file_path = ctx.resolve_client_path_fn(unquote(raw_path))
+
+        if not file_path or not os.path.isfile(file_path):
+            handler.send_error(404, "File not found")
+            return True
+        if not ctx.is_target_allowed_fn(file_path):
+            handler.send_error(403, "Access denied")
+            return True
+
+        mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        if not mime_type.startswith("audio/"):
+            handler.send_error(415, "Audio preview is only supported for audio files")
+            return True
+
+        try:
+            stream_inline_media(handler, file_path, mime_type, ctx.stream_chunk_size)
+        except Exception as e:
+            handler.send_error(500, f"Error: {e}")
+        return True
+
+    if path.startswith("/pdf"):
+        parsed = urlparse(path)
+        raw_path = parse_qs(parsed.query).get("path", [""])[0]
+        file_path = ctx.resolve_client_path_fn(unquote(raw_path))
+
+        if not file_path or not os.path.isfile(file_path):
+            handler.send_error(404, "File not found")
+            return True
+        if not ctx.is_target_allowed_fn(file_path):
+            handler.send_error(403, "Access denied")
+            return True
+
+        mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        if mime_type != "application/pdf":
+            handler.send_error(415, "PDF preview is only supported for PDF files")
+            return True
+
+        try:
+            stream_inline_media(handler, file_path, mime_type, ctx.stream_chunk_size)
+        except Exception as e:
+            handler.send_error(500, f"Error: {e}")
+        return True
+
+    if path.startswith("/docx"):
+        parsed = urlparse(path)
+        raw_path = parse_qs(parsed.query).get("path", [""])[0]
+        file_path = ctx.resolve_client_path_fn(unquote(raw_path))
+
+        if not file_path or not os.path.isfile(file_path):
+            handler.send_error(404, "File not found")
+            return True
+        if not ctx.is_target_allowed_fn(file_path):
+            handler.send_error(403, "Access denied")
+            return True
+
+        mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        allowed = {
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/msword",
+        }
+        if mime_type not in allowed:
+            handler.send_error(415, "Word preview is only supported for Word document files")
+            return True
+
+        try:
+            file_size = os.path.getsize(file_path)
+            handler.send_response(200)
+            handler.send_header("Content-type", mime_type)
+            handler.send_header("Content-Length", str(file_size))
+            handler.send_header("Content-Disposition", f"inline; filename=\"{os.path.basename(file_path)}\"")
+            handler.end_headers()
+
+            with open(file_path, "rb") as file_obj:
+                while True:
+                    chunk = file_obj.read(ctx.stream_chunk_size)
+                    if not chunk:
+                        break
+                    handler.wfile.write(chunk)
+        except Exception as e:
+            handler.send_error(500, f"Error: {e}")
+        return True
+
+    if path.startswith("/sheet"):
+        parsed = urlparse(path)
+        raw_path = parse_qs(parsed.query).get("path", [""])[0]
+        file_path = ctx.resolve_client_path_fn(unquote(raw_path))
+
+        if not file_path or not os.path.isfile(file_path):
+            handler.send_error(404, "File not found")
+            return True
+        if not ctx.is_target_allowed_fn(file_path):
+            handler.send_error(403, "Access denied")
+            return True
+
+        mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        allowed = {
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel",
+            "text/csv",
+            "application/csv",
+        }
+        if mime_type not in allowed:
+            handler.send_error(415, "Spreadsheet preview is only supported for sheet files")
+            return True
+
+        try:
+            file_size = os.path.getsize(file_path)
+            handler.send_response(200)
+            handler.send_header("Content-type", mime_type)
+            handler.send_header("Content-Length", str(file_size))
+            handler.send_header("Content-Disposition", f"inline; filename=\"{os.path.basename(file_path)}\"")
+            handler.end_headers()
+
+            with open(file_path, "rb") as file_obj:
+                while True:
+                    chunk = file_obj.read(ctx.stream_chunk_size)
+                    if not chunk:
+                        break
+                    handler.wfile.write(chunk)
+        except Exception as e:
+            handler.send_error(500, f"Error: {e}")
         return True
 
     if path.startswith("/download?"):

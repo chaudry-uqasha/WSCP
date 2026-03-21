@@ -2,7 +2,13 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from wscp_core.fs_utils import (
+    is_audio_file,
+    is_image_file,
     is_likely_text_file,
+    is_pdf_file,
+    is_sheet_file,
+    is_video_file,
+    is_word_file,
 )
 from wscp_core import access as core_access
 from wscp_core.selector import cli_access_selector
@@ -10,8 +16,11 @@ from wscp_core.http_routes import ServerContext, handle_get_request, handle_post
 from wscp_core.web_ui import render_index_html
 
 UPLOAD_FOLDER = "shared_files"
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_ROOT = os.path.abspath(os.path.join(BASE_DIR, UPLOAD_FOLDER))
+MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(MODULE_DIR, ".."))
+WORKSPACE_UPLOAD_ROOT = os.path.abspath(os.path.join(PROJECT_ROOT, UPLOAD_FOLDER))
+LEGACY_UPLOAD_ROOT = os.path.abspath(os.path.join(MODULE_DIR, UPLOAD_FOLDER))
+UPLOAD_ROOT = WORKSPACE_UPLOAD_ROOT if os.path.isdir(WORKSPACE_UPLOAD_ROOT) else LEGACY_UPLOAD_ROOT
 
 os.makedirs(UPLOAD_ROOT, exist_ok=True)
 
@@ -131,6 +140,12 @@ def get_folder_contents(path=None):
         upload_folder=UPLOAD_FOLDER,
         is_path_visible_fn=is_path_visible,
         is_likely_text_file_fn=is_likely_text_file,
+        is_image_file_fn=is_image_file,
+        is_video_file_fn=is_video_file,
+        is_audio_file_fn=is_audio_file,
+        is_pdf_file_fn=is_pdf_file,
+        is_word_file_fn=is_word_file,
+        is_sheet_file_fn=is_sheet_file,
     )
 
 
@@ -181,6 +196,7 @@ class CustomHandler(BaseHTTPRequestHandler):
 def main():
     global ALLOWED_PATHS
     print("=== 🎉 HTTP File Sharing Server ===")
+    print(f"[i] Share root: {UPLOAD_ROOT}")
 
     should_select_downloads = not ALLOW_UPLOADS or (ALLOW_UPLOADS and ALLOW_DOWNLOADS)
 

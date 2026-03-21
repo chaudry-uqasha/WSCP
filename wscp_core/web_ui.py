@@ -100,6 +100,39 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         display: flex;
                     }}
 
+                    .toolbar .search-wrap {{
+                        display: none;
+                        align-items: center;
+                        gap: 8px;
+                        min-width: 220px;
+                        max-width: 420px;
+                        flex: 1 1 300px;
+                    }}
+
+                    .toolbar .search-wrap.show {{
+                        display: flex;
+                    }}
+
+                    .toolbar .search-wrap input {{
+                        flex: 1;
+                        height: var(--btn-h);
+                        border-radius: var(--radius-1);
+                        border: 1px solid var(--line-2);
+                        padding: 0 10px;
+                        background: #0f0f0f;
+                        color: var(--text-1);
+                        font-size: 12px;
+                    }}
+
+                    .toolbar .search-wrap input:focus-visible {{
+                        outline: 2px solid #9a9a9a;
+                        outline-offset: 2px;
+                    }}
+
+                    #search-clear {{
+                        min-width: 72px;
+                    }}
+
                     .toolbar button,
                     .breadcrumb button,
                     .close-btn,
@@ -174,6 +207,10 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     }}
                     
                     .sidebar.hidden {{
+                        display: none;
+                    }}
+
+                    .sidebar-backdrop {{
                         display: none;
                     }}
                     
@@ -456,12 +493,224 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         word-wrap: break-word;
                         color: var(--text-1);
                     }}
+
+                    .doc-preview-frame {{
+                        width: 100%;
+                        height: 100%;
+                        min-height: 420px;
+                        border: 0;
+                        border-radius: 8px;
+                        background: #080808;
+                    }}
+
+                    .doc-preview-message {{
+                        font-family: 'Inter', sans-serif;
+                        font-size: 13px;
+                        color: var(--text-2);
+                        line-height: 1.5;
+                        margin-bottom: 12px;
+                    }}
+
+                    .doc-preview-actions {{
+                        display: flex;
+                        gap: 10px;
+                        flex-wrap: wrap;
+                    }}
+
+                    .sheet-preview-table {{
+                        width: 100%;
+                        border-collapse: collapse;
+                        font-family: 'Inter', sans-serif;
+                        font-size: 12px;
+                    }}
+
+                    .sheet-preview-table th,
+                    .sheet-preview-table td {{
+                        border: 1px solid #242424;
+                        padding: 6px 8px;
+                        text-align: left;
+                        vertical-align: top;
+                        max-width: 260px;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        white-space: nowrap;
+                    }}
+
+                    .sheet-preview-table th {{
+                        background: #141414;
+                        color: #fafafa;
+                        font-weight: 600;
+                    }}
+
+                    .image-viewer-body {{
+                        flex: 1;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 10px;
+                        min-height: 0;
+                    }}
+
+                    .image-nav {{
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        gap: 10px;
+                    }}
+
+                    .image-nav-btn {{
+                        min-width: 44px;
+                        height: 34px;
+                        border-radius: 8px;
+                        border: 1px solid #3a3a3a;
+                        background: #151515;
+                        color: var(--text-1);
+                        cursor: pointer;
+                        font-size: 16px;
+                    }}
+
+                    .image-nav-btn:disabled {{
+                        opacity: 0.45;
+                        cursor: not-allowed;
+                    }}
+
+                    .image-counter {{
+                        min-width: 72px;
+                        text-align: center;
+                        color: var(--text-3);
+                        font-size: 12px;
+                    }}
+
+                    .image-preview-wrap {{
+                        flex: 1;
+                        min-height: 0;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        border: 1px solid #1f1f1f;
+                        border-radius: var(--radius-1);
+                        background: #080808;
+                        overflow: hidden;
+                        padding: 10px;
+                    }}
+
+                    .image-preview {{
+                        max-width: 100%;
+                        max-height: 100%;
+                        object-fit: contain;
+                    }}
+
+                    .video-viewer-body {{
+                        flex: 1;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 10px;
+                        min-height: 0;
+                    }}
+
+                    .video-nav {{
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        gap: 10px;
+                    }}
+
+                    .video-nav-btn {{
+                        min-width: 44px;
+                        height: 34px;
+                        border-radius: 8px;
+                        border: 1px solid #3a3a3a;
+                        background: #151515;
+                        color: var(--text-1);
+                        cursor: pointer;
+                        font-size: 16px;
+                    }}
+
+                    .video-nav-btn:disabled {{
+                        opacity: 0.45;
+                        cursor: not-allowed;
+                    }}
+
+                    .video-counter {{
+                        min-width: 72px;
+                        text-align: center;
+                        color: var(--text-3);
+                        font-size: 12px;
+                    }}
+
+                    .video-preview-wrap {{
+                        flex: 1;
+                        min-height: 0;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        border: 1px solid #1f1f1f;
+                        border-radius: var(--radius-1);
+                        background: #080808;
+                        overflow: hidden;
+                        padding: 10px;
+                    }}
+
+                    .video-preview {{
+                        max-width: 100%;
+                        max-height: 100%;
+                        width: 100%;
+                        background: #000;
+                    }}
+
+                    .audio-player-body {{
+                        flex: 1;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 12px;
+                        min-height: 0;
+                    }}
+
+                    .audio-nav {{
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        gap: 10px;
+                    }}
+
+                    .audio-nav-btn {{
+                        min-width: 44px;
+                        height: 34px;
+                        border-radius: 8px;
+                        border: 1px solid #3a3a3a;
+                        background: #151515;
+                        color: var(--text-1);
+                        cursor: pointer;
+                        font-size: 16px;
+                    }}
+
+                    .audio-nav-btn:disabled {{
+                        opacity: 0.45;
+                        cursor: not-allowed;
+                    }}
+
+                    .audio-counter {{
+                        min-width: 72px;
+                        text-align: center;
+                        color: var(--text-3);
+                        font-size: 12px;
+                    }}
+
+                    .audio-preview-wrap {{
+                        border: 1px solid #1f1f1f;
+                        border-radius: var(--radius-1);
+                        background: #080808;
+                        padding: 18px 14px;
+                    }}
+
+                    .audio-preview {{
+                        width: 100%;
+                    }}
                     
                     .row-checkbox {{
                         width: 20px;
                         height: 20px;
                         cursor: pointer;
-                        accent-color: #ffffff;
+                        accent-color: #24d061;
                     }}
                     
                     .custom-dialog {{
@@ -719,17 +968,250 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     .toast.success {{
                         border-color: #4c7f4c;
                     }}
+
+                    @media (max-width: 1024px) {{
+                        #sidebar-toggle {{
+                            position: fixed;
+                            top: 10px;
+                            left: 10px;
+                            z-index: 1205;
+                            width: 40px;
+                            height: 40px;
+                        }}
+
+                        .sidebar.mobile-open + .sidebar-backdrop + .main-content #sidebar-toggle {{
+                            left: calc(min(84vw, 320px) - 50px);
+                        }}
+
+                        .sidebar {{
+                            position: fixed;
+                            left: 0;
+                            top: 0;
+                            bottom: 0;
+                            width: min(84vw, 320px);
+                            max-width: 320px;
+                            transform: translateX(-105%);
+                            transition: transform 0.2s ease;
+                            z-index: 1150;
+                        }}
+
+                        .sidebar.mobile-open {{
+                            transform: translateX(0);
+                        }}
+
+                        .sidebar.hidden {{
+                            display: block !important;
+                        }}
+
+                        .sidebar-backdrop {{
+                            position: fixed;
+                            inset: 0;
+                            background: rgba(0, 0, 0, 0.35);
+                            z-index: 1140;
+                        }}
+
+                        .sidebar-backdrop.show {{
+                            display: block;
+                        }}
+
+                        .main-content {{
+                            width: 100%;
+                            min-width: 0;
+                        }}
+
+                        .main-content.fullwidth {{
+                            width: 100%;
+                        }}
+
+                        .col-action {{
+                            width: 240px;
+                        }}
+
+                        .toolbar {{
+                            padding-left: 58px;
+                            gap: 8px;
+                            flex-wrap: wrap;
+                        }}
+                    }}
+
+                    @media (max-width: 768px) {{
+                        body {{
+                            overflow-x: hidden;
+                        }}
+
+                        .container {{
+                            height: 100vh;
+                            height: 100dvh;
+                        }}
+
+                        .toolbar {{
+                            padding: 10px 10px 10px 58px;
+                            gap: 8px;
+                            flex-wrap: wrap;
+                            align-items: stretch;
+                        }}
+
+                        .toolbar .spacer {{
+                            display: none;
+                        }}
+
+                        .toolbar > button,
+                        .bulk-actions button,
+                        .bulk-management button {{
+                            min-height: 40px;
+                            padding: 0 10px;
+                            font-size: 11px;
+                        }}
+
+                        .toolbar .search-wrap.show {{
+                            order: 100;
+                            width: 100%;
+                            max-width: none;
+                        }}
+
+                        .mode-badge {{
+                            order: 99;
+                            margin-left: 0;
+                            margin-top: 2px;
+                        }}
+
+                        .breadcrumb {{
+                            padding: 8px 10px;
+                            overflow-x: auto;
+                            white-space: nowrap;
+                            -webkit-overflow-scrolling: touch;
+                        }}
+
+                        .table-container {{
+                            padding: 8px;
+                            overflow-x: hidden;
+                        }}
+
+                        .file-table {{
+                            min-width: 0;
+                            border-collapse: separate;
+                            border-spacing: 0 10px;
+                            background: transparent;
+                            border: 0;
+                        }}
+
+                        .file-table thead {{
+                            display: none;
+                        }}
+
+                        .file-table,
+                        .file-table tbody,
+                        .file-table tr,
+                        .file-table td {{
+                            display: block;
+                            width: 100%;
+                        }}
+
+                        .file-table tr {{
+                            background: #0f0f0f;
+                            border: 1px solid #222;
+                            border-radius: 10px;
+                            padding: 8px;
+                            margin: 0;
+                        }}
+
+                        .file-table td {{
+                            border: 0;
+                            padding: 5px 8px;
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            gap: 10px;
+                        }}
+
+                        .file-table td::before {{
+                            content: attr(data-label);
+                            font-size: 10px;
+                            color: var(--text-3);
+                            text-transform: uppercase;
+                            letter-spacing: 0.04em;
+                            flex: 0 0 74px;
+                        }}
+
+                        .file-table td.col-name {{
+                            display: block;
+                            font-size: 14px;
+                            font-weight: 600;
+                        }}
+
+                        .file-table td.col-name::before {{
+                            content: attr(data-label);
+                            display: block;
+                            margin-bottom: 3px;
+                        }}
+
+                        .file-table td.col-select {{
+                            display: flex;
+                            justify-content: flex-start;
+                        }}
+
+                        .file-table td.col-select::before {{
+                            flex: 0 0 74px;
+                        }}
+
+                        .row-checkbox {{
+                            width: 24px;
+                            height: 24px;
+                        }}
+
+                        .col-action {{
+                            width: 100%;
+                            min-width: 0;
+                        }}
+
+                        .action-slot {{
+                            justify-content: flex-start;
+                            flex-wrap: wrap;
+                        }}
+
+                        .action-btn {{
+                            min-width: 72px;
+                            height: 36px;
+                            font-size: 10px;
+                        }}
+
+                        .modal-content {{
+                            width: calc(100% - 16px);
+                            height: min(88vh, 760px);
+                            height: min(88dvh, 760px);
+                            padding: 12px;
+                        }}
+
+                        .dialog-content {{
+                            width: calc(100% - 16px);
+                            padding: 16px;
+                        }}
+
+                        .image-nav-btn,
+                        .video-nav-btn,
+                        .audio-nav-btn,
+                        .close-btn {{
+                            min-width: 42px;
+                            height: 42px;
+                        }}
+                    }}
                 </style>
             </head>
             <body>
                 <div class="container">
-                    <div class="sidebar" id="sidebar"></div>
+                    <div class="sidebar hidden" id="sidebar"></div>
+                    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
                     <div class="main-content">
                         <div class="toolbar">
                             <button id="sidebar-toggle" aria-label="Toggle sidebar">⇆</button>
                             <button id="upload-btn">Upload</button>
                             <button id="mkdir-btn">New Folder</button>
                             <button id="manage-btn">Manage</button>
+                            <button id="search-toggle">Search</button>
+                            <div class="search-wrap" id="search-wrap">
+                                <input id="search-input" type="text" placeholder="Search files in current folder" aria-label="Search files" />
+                                <button id="search-clear">Clear</button>
+                            </div>
                             {"<span class='mode-badge'>Download Only</span>" if (not ALLOW_UPLOADS) else ("<span class='mode-badge'>Upload Only</span>" if (ALLOW_UPLOADS and not ALLOW_DOWNLOADS) else ("<span class='mode-badge'>Restricted Downloads</span>" if bool(ALLOWED_PATHS) else ""))}
                             <div class="spacer"></div>
                             <div class="bulk-actions" id="bulk-actions">
@@ -764,9 +1246,66 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     <div class="modal-content">
                         <div class="modal-header">
                             <h2 id="modal-title">File Viewer</h2>
-                            <button class="close-btn" onclick="document.getElementById('file-modal').classList.remove('show')">✕</button>
+                            <button class="close-btn" id="file-close-btn">✕</button>
                         </div>
                         <div class="modal-body" id="modal-body"></div>
+                    </div>
+                </div>
+
+                <div class="modal" id="image-modal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2 id="image-modal-title">Image Viewer</h2>
+                            <button class="close-btn" id="image-close-btn">✕</button>
+                        </div>
+                        <div class="image-viewer-body">
+                            <div class="image-nav">
+                                <button class="image-nav-btn" id="image-prev-btn" aria-label="Previous image">&#x2039;</button>
+                                <span class="image-counter" id="image-counter">0 / 0</span>
+                                <button class="image-nav-btn" id="image-next-btn" aria-label="Next image">&#x203A;</button>
+                            </div>
+                            <div class="image-preview-wrap">
+                                <img class="image-preview" id="image-preview" alt="Image preview" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal" id="video-modal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2 id="video-modal-title">Video Player</h2>
+                            <button class="close-btn" id="video-close-btn">✕</button>
+                        </div>
+                        <div class="video-viewer-body">
+                            <div class="video-nav">
+                                <button class="video-nav-btn" id="video-prev-btn" aria-label="Previous video">&#x2039;</button>
+                                <span class="video-counter" id="video-counter">0 / 0</span>
+                                <button class="video-nav-btn" id="video-next-btn" aria-label="Next video">&#x203A;</button>
+                            </div>
+                            <div class="video-preview-wrap">
+                                <video class="video-preview" id="video-preview" controls></video>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal" id="audio-modal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2 id="audio-modal-title">Audio Player</h2>
+                            <button class="close-btn" id="audio-close-btn">✕</button>
+                        </div>
+                        <div class="audio-player-body">
+                            <div class="audio-nav">
+                                <button class="audio-nav-btn" id="audio-prev-btn" aria-label="Previous audio">&#x2039;</button>
+                                <span class="audio-counter" id="audio-counter">0 / 0</span>
+                                <button class="audio-nav-btn" id="audio-next-btn" aria-label="Next audio">&#x203A;</button>
+                            </div>
+                            <div class="audio-preview-wrap">
+                                <audio class="audio-preview" id="audio-preview" controls></audio>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -781,12 +1320,45 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     const uploadsEnabled = {str(ALLOW_UPLOADS).lower()};
                     const downloadsEnabled = {str(ALLOW_DOWNLOADS).lower()};
                     const modal = document.getElementById('file-modal');
+                    const modalTitle = document.getElementById('modal-title');
+                    const modalBody = document.getElementById('modal-body');
+                    const imageModal = document.getElementById('image-modal');
+                    const imageModalTitle = document.getElementById('image-modal-title');
+                    const imagePreview = document.getElementById('image-preview');
+                    const imagePrevBtn = document.getElementById('image-prev-btn');
+                    const imageNextBtn = document.getElementById('image-next-btn');
+                    const imageCounter = document.getElementById('image-counter');
+                    const videoModal = document.getElementById('video-modal');
+                    const videoModalTitle = document.getElementById('video-modal-title');
+                    const videoPreview = document.getElementById('video-preview');
+                    const videoPrevBtn = document.getElementById('video-prev-btn');
+                    const videoNextBtn = document.getElementById('video-next-btn');
+                    const videoCounter = document.getElementById('video-counter');
+                    const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+                    const audioModal = document.getElementById('audio-modal');
+                    const audioModalTitle = document.getElementById('audio-modal-title');
+                    const audioPreview = document.getElementById('audio-preview');
+                    const audioPrevBtn = document.getElementById('audio-prev-btn');
+                    const audioNextBtn = document.getElementById('audio-next-btn');
+                    const audioCounter = document.getElementById('audio-counter');
                     const dropOverlay = document.getElementById('drop-overlay');
                     const toastHost = document.getElementById('toast-host');
+                    const searchToggleBtn = document.getElementById('search-toggle');
+                    const searchWrap = document.getElementById('search-wrap');
+                    const searchInput = document.getElementById('search-input');
+                    const searchClearBtn = document.getElementById('search-clear');
                     let itemMap = new Map();
+                    let currentFolderItems = [];
+                    let searchQuery = '';
                     let selectedItems = new Set();
                     let dragCounter = 0;
                     let manageMode = false;
+                    let imageFilesInCurrentFolder = [];
+                    let activeImageIndex = -1;
+                    let videoFilesInCurrentFolder = [];
+                    let activeVideoIndex = -1;
+                    let audioFilesInCurrentFolder = [];
+                    let activeAudioIndex = -1;
                     const INTERNAL_MOVE_MIME = 'application/x-wscp-items';
 
                     function ensureWriteEnabled() {{
@@ -795,6 +1367,52 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                             return false;
                         }}
                         return true;
+                    }}
+
+                    function isMobileViewport() {{
+                        return window.matchMedia('(max-width: 1024px)').matches;
+                    }}
+
+                    function updateSidebarToggleIcon() {{
+                        const sidebar = document.getElementById('sidebar');
+                        const toggleBtn = document.getElementById('sidebar-toggle');
+                        if (!sidebar || !toggleBtn) return;
+                        if (isMobileViewport()) {{
+                            toggleBtn.textContent = sidebar.classList.contains('mobile-open') ? '✕' : '☰';
+                            return;
+                        }}
+                        toggleBtn.textContent = sidebar.classList.contains('hidden') ? '☰' : '⇆';
+                    }}
+
+                    function closeMobileSidebar() {{
+                        if (!isMobileViewport()) return;
+                        const sidebar = document.getElementById('sidebar');
+                        if (!sidebar) return;
+                        sidebar.classList.remove('mobile-open');
+                        if (sidebarBackdrop) sidebarBackdrop.classList.remove('show');
+                        updateSidebarToggleIcon();
+                    }}
+
+                    function applyResponsiveLayout(initial = false) {{
+                        const sidebar = document.getElementById('sidebar');
+                        const mainContent = document.querySelector('.main-content');
+                        if (!sidebar || !mainContent) return;
+
+                        if (isMobileViewport()) {{
+                            sidebar.classList.remove('hidden');
+                            mainContent.classList.add('fullwidth');
+                            if (initial) sidebar.classList.remove('mobile-open');
+                            if (sidebarBackdrop) sidebarBackdrop.classList.remove('show');
+                        }} else {{
+                            sidebar.classList.remove('mobile-open');
+                            if (sidebarBackdrop) sidebarBackdrop.classList.remove('show');
+                            if (initial) {{
+                                sidebar.classList.remove('hidden');
+                                mainContent.classList.remove('fullwidth');
+                            }}
+                        }}
+
+                        updateSidebarToggleIcon();
                     }}
 
                     function setManageMode(enabled) {{
@@ -1640,6 +2258,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         div.addEventListener('click', () => {{
                             loadFolderContents(node.path);
                             updateBreadcrumb(node.path);
+                            closeMobileSidebar();
                         }});
 
                         if (uploadsEnabled) {{
@@ -1686,22 +2305,69 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                             const res = await fetch('/files-metadata?path=' + encodeURIComponent(path));
                             if (!res.ok) throw new Error('Failed to open folder');
                             const items = await res.json();
-                            renderTable(items);
+                            currentFolderItems = Array.isArray(items) ? items : [];
+                            applySearchFilter();
                         }} catch (e) {{
                             console.error('Error loading folder contents:', e);
                         }}
+                    }}
+
+                    function applySearchFilter() {{
+                        const query = (searchInput?.value || '').trim().toLowerCase();
+                        searchQuery = query;
+                        selectedItems.clear();
+
+                        if (!query) {{
+                            renderTable(currentFolderItems);
+                            return;
+                        }}
+
+                        const filtered = currentFolderItems.filter(item => {{
+                            const name = String(item.name || '').toLowerCase();
+                            const path = String(item.path || '').toLowerCase();
+                            return name.includes(query) || path.includes(query);
+                        }});
+                        renderTable(filtered);
+                    }}
+
+                    function toggleSearchBar(forceOpen = null) {{
+                        const shouldOpen = forceOpen === null ? !searchWrap.classList.contains('show') : !!forceOpen;
+                        searchWrap.classList.toggle('show', shouldOpen);
+
+                        if (shouldOpen) {{
+                            searchInput.focus();
+                            searchInput.select();
+                            return;
+                        }}
+
+                        searchInput.value = '';
+                        searchQuery = '';
+                        applySearchFilter();
                     }}
                     
                     function renderTable(items) {{
                         const tbody = document.getElementById('file-table');
                         tbody.innerHTML = '';
                         itemMap = new Map();
+                        imageFilesInCurrentFolder = items
+                            .filter(item => !item.is_dir && (!!item.is_image || isImageFilename(item.name)))
+                            .map(item => ({{ path: item.path, name: item.name }}));
+                        videoFilesInCurrentFolder = items
+                            .filter(item => !item.is_dir && (!!item.is_video || isVideoFilename(item.name)))
+                            .map(item => ({{ path: item.path, name: item.name }}));
+                        audioFilesInCurrentFolder = items
+                            .filter(item => !item.is_dir && (!!item.is_audio || isAudioFilename(item.name)))
+                            .map(item => ({{ path: item.path, name: item.name }}));
                         
                         items.forEach(item => {{
                             itemMap.set(item.path, item);
                             const row = document.createElement('tr');
                             const ext = item.name.substring(item.name.lastIndexOf('.')).toLowerCase();
                             const isTextFile = !!item.is_text;
+                            const isImageFile = !!item.is_image || isImageFilename(item.name);
+                            const isVideoFile = !!item.is_video || isVideoFilename(item.name);
+                            const isAudioFile = !!item.is_audio || isAudioFilename(item.name);
+                            const isPdfFile = !!item.is_pdf || isPdfFilename(item.name);
                             
                             let filename = item.name;
                             if (item.is_dir) filename += '/';
@@ -1716,6 +2382,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                             // Checkbox cell
                             const checkboxCell = document.createElement('td');
                             checkboxCell.className = 'col-select';
+                            checkboxCell.dataset.label = 'Select';
                             const checkbox = document.createElement('input');
                             checkbox.type = 'checkbox';
                             checkbox.className = 'row-checkbox';
@@ -1727,6 +2394,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                             // Filename cell
                             const filenameCell = document.createElement('td');
                             filenameCell.className = 'filename col-name';
+                            filenameCell.dataset.label = 'Name';
                             filenameCell.textContent = filename;
                             filenameCell.dataset.path = item.path;
                             filenameCell.dataset.isdir = item.is_dir;
@@ -1735,21 +2403,25 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                             
                             const sizeCell = document.createElement('td');
                             sizeCell.className = 'col-size';
+                            sizeCell.dataset.label = 'Size';
                             sizeCell.textContent = sizeStr;
                             row.appendChild(sizeCell);
                             
                             const typeCell = document.createElement('td');
                             typeCell.className = 'col-type';
+                            typeCell.dataset.label = 'Type';
                             typeCell.textContent = typeStr;
                             row.appendChild(typeCell);
                             
                             const dateCell = document.createElement('td');
                             dateCell.className = 'col-date';
+                            dateCell.dataset.label = 'Date';
                             dateCell.textContent = item.date;
                             row.appendChild(dateCell);
                             
                             const actionCell = document.createElement('td');
                             actionCell.className = 'col-action';
+                            actionCell.dataset.label = 'Actions';
                             const actionSlot = document.createElement('div');
                             actionSlot.className = 'action-slot';
                             
@@ -1776,6 +2448,42 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                                         viewBtn.dataset.file = item.path;
                                         viewBtn.dataset.name = item.name;
                                         actionSlot.appendChild(viewBtn);
+                                    }}
+
+                                    if (isImageFile) {{
+                                        const imageViewBtn = document.createElement('button');
+                                        imageViewBtn.className = 'action-btn image-view';
+                                        imageViewBtn.textContent = 'VIEW';
+                                        imageViewBtn.dataset.file = item.path;
+                                        imageViewBtn.dataset.name = item.name;
+                                        actionSlot.appendChild(imageViewBtn);
+                                    }}
+
+                                    if (isVideoFile) {{
+                                        const videoPlayBtn = document.createElement('button');
+                                        videoPlayBtn.className = 'action-btn video-play';
+                                        videoPlayBtn.textContent = 'PLAY';
+                                        videoPlayBtn.dataset.file = item.path;
+                                        videoPlayBtn.dataset.name = item.name;
+                                        actionSlot.appendChild(videoPlayBtn);
+                                    }}
+
+                                    if (isAudioFile) {{
+                                        const audioPlayBtn = document.createElement('button');
+                                        audioPlayBtn.className = 'action-btn audio-play';
+                                        audioPlayBtn.textContent = 'PLAY';
+                                        audioPlayBtn.dataset.file = item.path;
+                                        audioPlayBtn.dataset.name = item.name;
+                                        actionSlot.appendChild(audioPlayBtn);
+                                    }}
+
+                                    if (isPdfFile) {{
+                                        const pdfViewBtn = document.createElement('button');
+                                        pdfViewBtn.className = 'action-btn pdf-view';
+                                        pdfViewBtn.textContent = 'VIEW';
+                                        pdfViewBtn.dataset.file = item.path;
+                                        pdfViewBtn.dataset.name = item.name;
+                                        actionSlot.appendChild(pdfViewBtn);
                                     }}
                                 }}
                             }}
@@ -1845,6 +2553,19 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
 
                             tbody.appendChild(row);
                         }});
+
+                        if (items.length === 0) {{
+                            const emptyRow = document.createElement('tr');
+                            const emptyCell = document.createElement('td');
+                            emptyCell.colSpan = 6;
+                            emptyCell.style.padding = '18px 12px';
+                            emptyCell.style.color = '#a0a0a0';
+                            emptyCell.textContent = searchQuery
+                                ? 'No results for "' + searchQuery + '" in this folder.'
+                                : 'No files found in this folder.';
+                            emptyRow.appendChild(emptyCell);
+                            tbody.appendChild(emptyRow);
+                        }}
                         
                         // Attach event listeners
                         document.querySelectorAll('.filename').forEach(el => {{
@@ -1854,6 +2575,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                                 if (isDir && path) {{
                                     loadFolderContents(path);
                                     updateBreadcrumb(path);
+                                    closeMobileSidebar();
                                 }}
                             }});
                         }});
@@ -1863,6 +2585,38 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                                 const filePath = this.dataset.file;
                                 const fileName = this.dataset.name;
                                 viewFile(filePath, fileName);
+                            }});
+                        }});
+
+                        document.querySelectorAll('.image-view').forEach(el => {{
+                            el.addEventListener('click', function() {{
+                                const filePath = this.dataset.file;
+                                const fileName = this.dataset.name;
+                                openImageViewer(filePath, fileName);
+                            }});
+                        }});
+
+                        document.querySelectorAll('.video-play').forEach(el => {{
+                            el.addEventListener('click', function() {{
+                                const filePath = this.dataset.file;
+                                const fileName = this.dataset.name;
+                                openVideoPlayer(filePath, fileName);
+                            }});
+                        }});
+
+                        document.querySelectorAll('.audio-play').forEach(el => {{
+                            el.addEventListener('click', function() {{
+                                const filePath = this.dataset.file;
+                                const fileName = this.dataset.name;
+                                openAudioPlayer(filePath, fileName);
+                            }});
+                        }});
+
+                        document.querySelectorAll('.pdf-view').forEach(el => {{
+                            el.addEventListener('click', function() {{
+                                const filePath = this.dataset.file;
+                                const fileName = this.dataset.name;
+                                openPdfViewer(filePath, fileName);
                             }});
                         }});
                         
@@ -1894,6 +2648,316 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         const i = Math.floor(Math.log(bytes) / Math.log(k));
                         return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
                     }}
+
+                    function isImageFilename(name) {{
+                        return /\\.(jpg|jpeg|png)$/i.test(name || '');
+                    }}
+
+                    function isVideoFilename(name) {{
+                        return /\\.(mp4|webm|ogg)$/i.test(name || '');
+                    }}
+
+                    function isAudioFilename(name) {{
+                        return /\\.(mp3|wav|ogg|aac)$/i.test(name || '');
+                    }}
+
+                    function isPdfFilename(name) {{
+                        return /\\.pdf$/i.test(name || '');
+                    }}
+
+                    function isWordFilename(name) {{
+                        return /\\.docx$/i.test(name || '');
+                    }}
+
+                    function isSheetFilename(name) {{
+                        return /\\.(xlsx|xls|csv)$/i.test(name || '');
+                    }}
+
+                    function closeFileViewer() {{
+                        modal.classList.remove('show');
+                        modalBody.textContent = '';
+                        modalBody.innerHTML = '';
+                    }}
+
+                    function openModalWithTitle(title) {{
+                        modalTitle.textContent = title;
+                        modalBody.textContent = '';
+                        modalBody.innerHTML = '';
+                        modal.classList.add('show');
+                    }}
+
+                    function openPdfViewer(filePath, fileName) {{
+                        if (!downloadsEnabled) return;
+                        openModalWithTitle('PDF Viewer - ' + fileName);
+                        const frame = document.createElement('iframe');
+                        frame.className = 'doc-preview-frame';
+                        frame.src = '/pdf?path=' + encodeURIComponent(filePath);
+                        frame.setAttribute('title', 'PDF preview');
+                        modalBody.appendChild(frame);
+                    }}
+
+                    async function openWordViewer(filePath, fileName) {{
+                        if (!downloadsEnabled) return;
+                        openModalWithTitle('Word Viewer - ' + fileName);
+
+                        try {{
+                            const res = await fetch('/docx?path=' + encodeURIComponent(filePath));
+                            if (!res.ok) throw new Error('Preview unavailable');
+                            const blob = await res.blob();
+                            const sizeText = formatSize(blob.size || 0);
+
+                            const message = document.createElement('div');
+                            message.className = 'doc-preview-message';
+                            message.textContent = 'Document stream is ready (' + sizeText + '). Rich DOCX rendering will be enabled in the next implementation step.';
+                            modalBody.appendChild(message);
+
+                            const actions = document.createElement('div');
+                            actions.className = 'doc-preview-actions';
+                            const downloadBtn = document.createElement('button');
+                            downloadBtn.className = 'action-btn';
+                            downloadBtn.textContent = 'DOWNLOAD';
+                            downloadBtn.addEventListener('click', function() {{
+                                openDownloadDialog(filePath, fileName);
+                            }});
+                            actions.appendChild(downloadBtn);
+                            modalBody.appendChild(actions);
+                        }} catch (e) {{
+                            showDialog('Error loading document: ' + e.message);
+                            closeFileViewer();
+                        }}
+                    }}
+
+                    function parseCsvLine(line) {{
+                        const out = [];
+                        let current = '';
+                        let inQuotes = false;
+
+                        for (let i = 0; i < line.length; i += 1) {{
+                            const ch = line[i];
+                            if (ch === '"') {{
+                                if (inQuotes && line[i + 1] === '"') {{
+                                    current += '"';
+                                    i += 1;
+                                }} else {{
+                                    inQuotes = !inQuotes;
+                                }}
+                            }} else if (ch === ',' && !inQuotes) {{
+                                out.push(current);
+                                current = '';
+                            }} else {{
+                                current += ch;
+                            }}
+                        }}
+                        out.push(current);
+                        return out;
+                    }}
+
+                    function renderCsvPreview(csvText) {{
+                        const lines = (csvText || '').split(/\\r?\\n/).filter(Boolean).slice(0, 200);
+                        if (!lines.length) {{
+                            modalBody.textContent = 'Empty CSV file.';
+                            return;
+                        }}
+
+                        const rows = lines.map(parseCsvLine);
+                        const maxCols = Math.min(20, Math.max(...rows.map(r => r.length), 0));
+                        const table = document.createElement('table');
+                        table.className = 'sheet-preview-table';
+
+                        const thead = document.createElement('thead');
+                        const headRow = document.createElement('tr');
+                        for (let i = 0; i < maxCols; i += 1) {{
+                            const th = document.createElement('th');
+                            th.textContent = 'Col ' + (i + 1);
+                            headRow.appendChild(th);
+                        }}
+                        thead.appendChild(headRow);
+                        table.appendChild(thead);
+
+                        const tbody = document.createElement('tbody');
+                        rows.forEach(row => {{
+                            const tr = document.createElement('tr');
+                            for (let i = 0; i < maxCols; i += 1) {{
+                                const td = document.createElement('td');
+                                td.textContent = row[i] || '';
+                                tr.appendChild(td);
+                            }}
+                            tbody.appendChild(tr);
+                        }});
+
+                        table.appendChild(tbody);
+                        modalBody.appendChild(table);
+                    }}
+
+                    async function openSheetViewer(filePath, fileName) {{
+                        if (!downloadsEnabled) return;
+                        openModalWithTitle('Sheet Viewer - ' + fileName);
+
+                        try {{
+                            const res = await fetch('/sheet?path=' + encodeURIComponent(filePath));
+                            if (!res.ok) throw new Error('Preview unavailable');
+
+                            const contentType = (res.headers.get('Content-Type') || '').toLowerCase();
+                            if (contentType.includes('csv') || /\\.csv$/i.test(fileName || '')) {{
+                                const csvText = await res.text();
+                                renderCsvPreview(csvText);
+                                return;
+                            }}
+
+                            const blob = await res.blob();
+                            const message = document.createElement('div');
+                            message.className = 'doc-preview-message';
+                            message.textContent = 'Spreadsheet stream is ready (' + formatSize(blob.size || 0) + '). XLSX/XLS grid rendering will be enabled in the next implementation step.';
+                            modalBody.appendChild(message);
+
+                            const actions = document.createElement('div');
+                            actions.className = 'doc-preview-actions';
+                            const downloadBtn = document.createElement('button');
+                            downloadBtn.className = 'action-btn';
+                            downloadBtn.textContent = 'DOWNLOAD';
+                            downloadBtn.addEventListener('click', function() {{
+                                openDownloadDialog(filePath, fileName);
+                            }});
+                            actions.appendChild(downloadBtn);
+                            modalBody.appendChild(actions);
+                        }} catch (e) {{
+                            showDialog('Error loading sheet: ' + e.message);
+                            closeFileViewer();
+                        }}
+                    }}
+
+                    function closeImageViewer() {{
+                        imageModal.classList.remove('show');
+                        imagePreview.removeAttribute('src');
+                        activeImageIndex = -1;
+                    }}
+
+                    function renderActiveImage() {{
+                        if (activeImageIndex < 0 || activeImageIndex >= imageFilesInCurrentFolder.length) return;
+                        const active = imageFilesInCurrentFolder[activeImageIndex];
+                        imageModalTitle.textContent = '🖼 ' + active.name;
+                        imageCounter.textContent = (activeImageIndex + 1) + ' / ' + imageFilesInCurrentFolder.length;
+                        imagePreview.src = '/image?path=' + encodeURIComponent(active.path);
+                        imagePrevBtn.disabled = activeImageIndex === 0;
+                        imageNextBtn.disabled = activeImageIndex === imageFilesInCurrentFolder.length - 1;
+                    }}
+
+                    function openImageViewer(filePath, fileName) {{
+                        if (!downloadsEnabled) return;
+                        if (!imageFilesInCurrentFolder.length) {{
+                            showDialog('No images found in this folder.');
+                            return;
+                        }}
+
+                        const index = imageFilesInCurrentFolder.findIndex(file => file.path === filePath);
+                        if (index >= 0) {{
+                            activeImageIndex = index;
+                        }} else {{
+                            imageFilesInCurrentFolder.push({{ path: filePath, name: fileName }});
+                            activeImageIndex = imageFilesInCurrentFolder.length - 1;
+                        }}
+
+                        renderActiveImage();
+                        imageModal.classList.add('show');
+                    }}
+
+                    function navigateImage(delta) {{
+                        if (!imageModal.classList.contains('show')) return;
+                        const nextIndex = activeImageIndex + delta;
+                        if (nextIndex < 0 || nextIndex >= imageFilesInCurrentFolder.length) return;
+                        activeImageIndex = nextIndex;
+                        renderActiveImage();
+                    }}
+
+                    function closeVideoPlayer() {{
+                        videoModal.classList.remove('show');
+                        videoPreview.pause();
+                        videoPreview.removeAttribute('src');
+                        videoPreview.load();
+                        activeVideoIndex = -1;
+                    }}
+
+                    function renderActiveVideo() {{
+                        if (activeVideoIndex < 0 || activeVideoIndex >= videoFilesInCurrentFolder.length) return;
+                        const active = videoFilesInCurrentFolder[activeVideoIndex];
+                        videoModalTitle.textContent = '▶ ' + active.name;
+                        videoCounter.textContent = (activeVideoIndex + 1) + ' / ' + videoFilesInCurrentFolder.length;
+                        videoPreview.src = '/video?path=' + encodeURIComponent(active.path);
+                        videoPrevBtn.disabled = activeVideoIndex === 0;
+                        videoNextBtn.disabled = activeVideoIndex === videoFilesInCurrentFolder.length - 1;
+                    }}
+
+                    function openVideoPlayer(filePath, fileName) {{
+                        if (!downloadsEnabled) return;
+                        if (!videoFilesInCurrentFolder.length) {{
+                            showDialog('No videos found in this folder.');
+                            return;
+                        }}
+
+                        const index = videoFilesInCurrentFolder.findIndex(file => file.path === filePath);
+                        if (index >= 0) {{
+                            activeVideoIndex = index;
+                        }} else {{
+                            videoFilesInCurrentFolder.push({{ path: filePath, name: fileName }});
+                            activeVideoIndex = videoFilesInCurrentFolder.length - 1;
+                        }}
+
+                        renderActiveVideo();
+                        videoModal.classList.add('show');
+                    }}
+
+                    function navigateVideo(delta) {{
+                        if (!videoModal.classList.contains('show')) return;
+                        const nextIndex = activeVideoIndex + delta;
+                        if (nextIndex < 0 || nextIndex >= videoFilesInCurrentFolder.length) return;
+                        activeVideoIndex = nextIndex;
+                        renderActiveVideo();
+                    }}
+
+                    function closeAudioPlayer() {{
+                        audioModal.classList.remove('show');
+                        audioPreview.pause();
+                        audioPreview.removeAttribute('src');
+                        audioPreview.load();
+                        activeAudioIndex = -1;
+                    }}
+
+                    function renderActiveAudio() {{
+                        if (activeAudioIndex < 0 || activeAudioIndex >= audioFilesInCurrentFolder.length) return;
+                        const active = audioFilesInCurrentFolder[activeAudioIndex];
+                        audioModalTitle.textContent = '♪ ' + active.name;
+                        audioCounter.textContent = (activeAudioIndex + 1) + ' / ' + audioFilesInCurrentFolder.length;
+                        audioPreview.src = '/audio?path=' + encodeURIComponent(active.path);
+                        audioPrevBtn.disabled = activeAudioIndex === 0;
+                        audioNextBtn.disabled = activeAudioIndex === audioFilesInCurrentFolder.length - 1;
+                    }}
+
+                    function openAudioPlayer(filePath, fileName) {{
+                        if (!downloadsEnabled) return;
+                        if (!audioFilesInCurrentFolder.length) {{
+                            showDialog('No audio files found in this folder.');
+                            return;
+                        }}
+
+                        const index = audioFilesInCurrentFolder.findIndex(file => file.path === filePath);
+                        if (index >= 0) {{
+                            activeAudioIndex = index;
+                        }} else {{
+                            audioFilesInCurrentFolder.push({{ path: filePath, name: fileName }});
+                            activeAudioIndex = audioFilesInCurrentFolder.length - 1;
+                        }}
+
+                        renderActiveAudio();
+                        audioModal.classList.add('show');
+                    }}
+
+                    function navigateAudio(delta) {{
+                        if (!audioModal.classList.contains('show')) return;
+                        const nextIndex = activeAudioIndex + delta;
+                        if (nextIndex < 0 || nextIndex >= audioFilesInCurrentFolder.length) return;
+                        activeAudioIndex = nextIndex;
+                        renderActiveAudio();
+                    }}
                     
                     async function viewFile(filePath, fileName) {{
                         try {{
@@ -1903,8 +2967,8 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                                 throw new Error(msg || 'Preview unavailable');
                             }}
                             const content = await res.text();
-                            document.getElementById('modal-title').textContent = '📄 ' + fileName;
-                            document.getElementById('modal-body').textContent = content;
+                            modalTitle.textContent = '📄 ' + fileName;
+                            modalBody.textContent = content;
                             modal.classList.add('show');
                         }} catch (e) {{
                             showDialog('Error loading file: ' + e.message);
@@ -1979,6 +3043,27 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         setManageMode(!manageMode);
                     }});
 
+                    searchToggleBtn.addEventListener('click', function() {{
+                        toggleSearchBar();
+                    }});
+
+                    searchClearBtn.addEventListener('click', function() {{
+                        searchInput.value = '';
+                        searchQuery = '';
+                        applySearchFilter();
+                        searchInput.focus();
+                    }});
+
+                    searchInput.addEventListener('input', function() {{
+                        applySearchFilter();
+                    }});
+
+                    searchInput.addEventListener('keydown', function(e) {{
+                        if (e.key !== 'Escape') return;
+                        e.preventDefault();
+                        toggleSearchBar(false);
+                    }});
+
                     document.getElementById('bulk-delete').addEventListener('click', function() {{
                         if (selectedItems.size === 0) return;
                         const paths = Array.from(selectedItems);
@@ -1989,6 +3074,107 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         if (selectedItems.size === 0) return;
                         const paths = Array.from(selectedItems);
                         openMoveDialog(paths, paths.length + ' item(s) selected');
+                    }});
+
+                    document.getElementById('file-close-btn').addEventListener('click', function() {{
+                        closeFileViewer();
+                    }});
+
+                    modal.addEventListener('click', function(e) {{
+                        if (e.target === modal) closeFileViewer();
+                    }});
+
+                    imagePrevBtn.addEventListener('click', function() {{
+                        navigateImage(-1);
+                    }});
+
+                    imageNextBtn.addEventListener('click', function() {{
+                        navigateImage(1);
+                    }});
+
+                    document.getElementById('image-close-btn').addEventListener('click', function() {{
+                        closeImageViewer();
+                    }});
+
+                    imageModal.addEventListener('click', function(e) {{
+                        if (e.target === imageModal) closeImageViewer();
+                    }});
+
+                    videoPrevBtn.addEventListener('click', function() {{
+                        navigateVideo(-1);
+                    }});
+
+                    videoNextBtn.addEventListener('click', function() {{
+                        navigateVideo(1);
+                    }});
+
+                    document.getElementById('video-close-btn').addEventListener('click', function() {{
+                        closeVideoPlayer();
+                    }});
+
+                    videoModal.addEventListener('click', function(e) {{
+                        if (e.target === videoModal) closeVideoPlayer();
+                    }});
+
+                    audioPrevBtn.addEventListener('click', function() {{
+                        navigateAudio(-1);
+                    }});
+
+                    audioNextBtn.addEventListener('click', function() {{
+                        navigateAudio(1);
+                    }});
+
+                    document.getElementById('audio-close-btn').addEventListener('click', function() {{
+                        closeAudioPlayer();
+                    }});
+
+                    audioModal.addEventListener('click', function(e) {{
+                        if (e.target === audioModal) closeAudioPlayer();
+                    }});
+
+                    document.addEventListener('keydown', function(e) {{
+                        if (imageModal.classList.contains('show')) {{
+                            if (e.key === 'ArrowLeft') {{
+                                e.preventDefault();
+                                navigateImage(-1);
+                            }} else if (e.key === 'ArrowRight') {{
+                                e.preventDefault();
+                                navigateImage(1);
+                            }} else if (e.key === 'Escape') {{
+                                e.preventDefault();
+                                closeImageViewer();
+                            }}
+                            return;
+                        }}
+                        if (videoModal.classList.contains('show')) {{
+                            if (e.key === 'ArrowLeft') {{
+                                e.preventDefault();
+                                navigateVideo(-1);
+                            }} else if (e.key === 'ArrowRight') {{
+                                e.preventDefault();
+                                navigateVideo(1);
+                            }} else if (e.key === 'Escape') {{
+                                e.preventDefault();
+                                closeVideoPlayer();
+                            }}
+                            return;
+                        }}
+                        if (modal.classList.contains('show') && e.key === 'Escape') {{
+                            e.preventDefault();
+                            closeFileViewer();
+                            return;
+                        }}
+                        if (!audioModal.classList.contains('show')) return;
+                        if (e.key === 'ArrowLeft') {{
+                            e.preventDefault();
+                            navigateAudio(-1);
+                        }} else if (e.key === 'ArrowRight') {{
+                            e.preventDefault();
+                            navigateAudio(1);
+                        }} else if (e.key === 'Escape') {{
+                            e.preventDefault();
+                            closeAudioPlayer();
+                        }}
                     }});
                     
                     function updateBreadcrumb(path) {{
@@ -2031,10 +3217,30 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     document.getElementById('sidebar-toggle').addEventListener('click', () => {{
                         const sidebar = document.getElementById('sidebar');
                         const mainContent = document.querySelector('.main-content');
+                        if (isMobileViewport()) {{
+                            sidebar.classList.remove('hidden');
+                            mainContent.classList.add('fullwidth');
+                            sidebar.classList.toggle('mobile-open');
+                            if (sidebarBackdrop) {{
+                                sidebarBackdrop.classList.toggle('show', sidebar.classList.contains('mobile-open'));
+                            }}
+                            updateSidebarToggleIcon();
+                            return;
+                        }}
+
                         sidebar.classList.toggle('hidden');
                         mainContent.classList.toggle('fullwidth');
-                        const toggleBtn = document.getElementById('sidebar-toggle');
-                        toggleBtn.textContent = sidebar.classList.contains('hidden') ? '☰' : '⇆';
+                        updateSidebarToggleIcon();
+                    }});
+
+                    if (sidebarBackdrop) {{
+                        sidebarBackdrop.addEventListener('click', () => {{
+                            closeMobileSidebar();
+                        }});
+                    }}
+
+                    window.addEventListener('resize', () => {{
+                        applyResponsiveLayout(false);
                     }});
 
                     document.addEventListener('dragenter', (e) => {{
@@ -2091,6 +3297,8 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         setManageMode(false);
                     }}
                     
+                    applyResponsiveLayout(true);
+
                     // Load on page load
                     if (document.readyState === 'loading') {{
                         window.addEventListener('load', () => {{

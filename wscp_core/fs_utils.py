@@ -2,6 +2,14 @@ import os
 import time
 
 
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+VIDEO_EXTENSIONS = {".mp4", ".webm", ".ogg"}
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".aac"}
+PDF_EXTENSIONS = {".pdf"}
+WORD_EXTENSIONS = {".docx"}
+SHEET_EXTENSIONS = {".xlsx", ".xls", ".csv"}
+
+
 def sanitize_filename(filename):
     cleaned = os.path.basename((filename or "").replace("\x00", "")).strip()
     return cleaned or f"upload_{int(time.time())}.bin"
@@ -100,3 +108,33 @@ def is_likely_text_file(file_path, sample_size=65536):
     printable = sum(1 for ch in decoded if ch.isprintable() or ch in "\r\n\t")
     ratio = printable / max(len(decoded), 1)
     return ratio >= 0.86
+
+
+def is_image_file(file_path):
+    _, ext = os.path.splitext(file_path or "")
+    return ext.lower() in IMAGE_EXTENSIONS
+
+
+def is_video_file(file_path):
+    _, ext = os.path.splitext(file_path or "")
+    return ext.lower() in VIDEO_EXTENSIONS
+
+
+def is_audio_file(file_path):
+    _, ext = os.path.splitext(file_path or "")
+    return ext.lower() in AUDIO_EXTENSIONS
+
+
+def is_pdf_file(file_path):
+    _, ext = os.path.splitext(file_path or "")
+    return ext.lower() in PDF_EXTENSIONS
+
+
+def is_word_file(file_path):
+    _, ext = os.path.splitext(file_path or "")
+    return ext.lower() in WORD_EXTENSIONS
+
+
+def is_sheet_file(file_path):
+    _, ext = os.path.splitext(file_path or "")
+    return ext.lower() in SHEET_EXTENSIONS
