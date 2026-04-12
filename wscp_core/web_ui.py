@@ -129,8 +129,11 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         outline-offset: 2px;
                     }}
 
-                    #search-clear {{
-                        min-width: 72px;
+                    #search-close {{
+                        width: var(--btn-h);
+                        min-width: var(--btn-h);
+                        padding: 0;
+                        font-size: 14px;
                     }}
 
                     .toolbar button,
@@ -1210,7 +1213,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                             <button id="search-toggle">Search</button>
                             <div class="search-wrap" id="search-wrap">
                                 <input id="search-input" type="text" placeholder="Search files in current folder" aria-label="Search files" />
-                                <button id="search-clear">Clear</button>
+                                <button id="search-close" aria-label="Close search">✕</button>
                             </div>
                             {"<span class='mode-badge'>Download Only</span>" if (not ALLOW_UPLOADS) else ("<span class='mode-badge'>Upload Only</span>" if (ALLOW_UPLOADS and not ALLOW_DOWNLOADS) else ("<span class='mode-badge'>Restricted Downloads</span>" if bool(ALLOWED_PATHS) else ""))}
                             <div class="spacer"></div>
@@ -1346,11 +1349,12 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     const searchToggleBtn = document.getElementById('search-toggle');
                     const searchWrap = document.getElementById('search-wrap');
                     const searchInput = document.getElementById('search-input');
-                    const searchClearBtn = document.getElementById('search-clear');
+                    const searchCloseBtn = document.getElementById('search-close');
                     let itemMap = new Map();
                     let currentFolderItems = [];
                     let searchQuery = '';
                     let selectedItems = new Set();
+                    let expandedTreePaths = new Set();
                     let dragCounter = 0;
                     let manageMode = false;
                     let imageFilesInCurrentFolder = [];
@@ -2220,22 +2224,43 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     
                     async function loadFolderTree() {{
                         try {{
+                            const sidebarEl = document.getElementById('sidebar');
+                            if (sidebarEl) {{
+                                const openPaths = new Set();
+                                sidebarEl.querySelectorAll('.tree-item').forEach(item => {{
+                                    const childContainer = item.nextElementSibling;
+                                    if (
+                                        childContainer &&
+                                        childContainer.classList.contains('tree-children') &&
+                                        childContainer.classList.contains('open') &&
+                                        item.dataset.path
+                                    ) {{
+                                        openPaths.add(item.dataset.path);
+                                    }}
+                                }});
+                                expandedTreePaths = openPaths;
+                            }}
+
                             const res = await fetch('/folder-tree');
                             const tree = await res.json();
-                            const sidebar = document.getElementById('sidebar');
-                            sidebar.innerHTML = '';
-                            renderTree(tree, sidebar);
+                            const sidebarMount = document.getElementById('sidebar');
+                            sidebarMount.innerHTML = '';
+                            renderTree(tree, sidebarMount);
                         }} catch (e) {{
                             console.error('Error loading folder tree:', e);
                         }}
                     }}
                     
                     function renderTree(node, container, depth = 0) {{
+                        const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+                        const isCurrentPathOrParent = currentPath === node.path || currentPath.startsWith(node.path + '/');
+                        const shouldOpen = hasChildren && (expandedTreePaths.has(node.path) || isCurrentPathOrParent);
+
                         const div = document.createElement('div');
                         div.className = 'tree-item folder';
                         div.style.marginLeft = (depth * 15) + 'px';
                         
-                        let html = '<span class="tree-toggle">+ </span>';
+                        let html = '<span class="tree-toggle">' + (shouldOpen ? '- ' : '+ ') + '</span>';
                         html += '📁 ' + node.name;
                         
                         div.innerHTML = html;
@@ -2244,18 +2269,30 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         const toggle = div.querySelector('.tree-toggle');
                         const childrenDiv = document.createElement('div');
                         childrenDiv.className = 'tree-children';
+                        if (shouldOpen) {{
+                            childrenDiv.classList.add('open');
+                            expandedTreePaths.add(node.path);
+                        }}
                         
-                        if (node.children.length === 0) {{
+                        if (!hasChildren) {{
                             toggle.style.visibility = 'hidden';
                         }}
                         
                         toggle.addEventListener('click', (e) => {{
                             e.stopPropagation();
+                            if (!hasChildren) return;
                             childrenDiv.classList.toggle('open');
-                            toggle.textContent = childrenDiv.classList.contains('open') ? '- ' : '+ ';
+                            const isOpen = childrenDiv.classList.contains('open');
+                            toggle.textContent = isOpen ? '- ' : '+ ';
+                            if (isOpen) {{
+                                expandedTreePaths.add(node.path);
+                            }} else {{
+                                expandedTreePaths.delete(node.path);
+                            }}
                         }});
                         
                         div.addEventListener('click', () => {{
+                            if (hasChildren) expandedTreePaths.add(node.path);
                             loadFolderContents(node.path);
                             updateBreadcrumb(node.path);
                             closeMobileSidebar();
@@ -2330,16 +2367,14 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         renderTable(filtered);
                     }}
 
-                    function toggleSearchBar(forceOpen = null) {{
-                        const shouldOpen = forceOpen === null ? !searchWrap.classList.contains('show') : !!forceOpen;
-                        searchWrap.classList.toggle('show', shouldOpen);
+                    function openSearchBar() {{
+                        searchWrap.classList.add('show');
+                        searchInput.focus();
+                        searchInput.select();
+                    }}
 
-                        if (shouldOpen) {{
-                            searchInput.focus();
-                            searchInput.select();
-                            return;
-                        }}
-
+                    function closeSearchBar() {{
+                        searchWrap.classList.remove('show');
                         searchInput.value = '';
                         searchQuery = '';
                         applySearchFilter();
@@ -3044,14 +3079,11 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     }});
 
                     searchToggleBtn.addEventListener('click', function() {{
-                        toggleSearchBar();
+                        openSearchBar();
                     }});
 
-                    searchClearBtn.addEventListener('click', function() {{
-                        searchInput.value = '';
-                        searchQuery = '';
-                        applySearchFilter();
-                        searchInput.focus();
+                    searchCloseBtn.addEventListener('click', function() {{
+                        closeSearchBar();
                     }});
 
                     searchInput.addEventListener('input', function() {{
@@ -3061,7 +3093,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     searchInput.addEventListener('keydown', function(e) {{
                         if (e.key !== 'Escape') return;
                         e.preventDefault();
-                        toggleSearchBar(false);
+                        closeSearchBar();
                     }});
 
                     document.getElementById('bulk-delete').addEventListener('click', function() {{
