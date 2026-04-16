@@ -783,8 +783,8 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
             <head>
                 <meta charset="UTF-8">
                 <title>WSCP - File Sharing Server</title>
-                <link rel="icon" type="image/x-icon" href="/favicon.ico">
-                <link rel="shortcut icon" href="/favicon.ico">
+                <link rel="icon" type="image/x-icon" href="/favicon.ico?v=3">
+                <link rel="shortcut icon" href="/favicon.ico?v=3">
                 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700&display=swap" rel="stylesheet">
                 <style>
                     * {{
@@ -5169,22 +5169,59 @@ def _handle_bulk_move(handler: BaseHTTPRequestHandler, parsed_url, ctx: ServerCo
     send_json(handler, 200, {"ok": True, "task_id": task_id, "moved": len(moved_items), "items": moved_items})
 
 import os
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 UPLOAD_FOLDER = "shared_files"
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.abspath(os.path.join(MODULE_DIR, ".."))
-WORKSPACE_UPLOAD_ROOT = os.path.abspath(os.path.join(PROJECT_ROOT, UPLOAD_FOLDER))
-LEGACY_UPLOAD_ROOT = os.path.abspath(os.path.join(MODULE_DIR, UPLOAD_FOLDER))
-UPLOAD_ROOT = WORKSPACE_UPLOAD_ROOT if os.path.isdir(WORKSPACE_UPLOAD_ROOT) else LEGACY_UPLOAD_ROOT
-FAVICON_CANDIDATES = [
-    os.path.abspath(os.path.join(PROJECT_ROOT, "Images", "favicon.ico")),
-    os.path.abspath(os.path.join(MODULE_DIR, "Images", "favicon.ico")),
-]
-FAVICON_PATH = next((path for path in FAVICON_CANDIDATES if os.path.isfile(path)), None)
+APP_ROOT = os.path.dirname(os.path.abspath(sys.executable)) if getattr(sys, "frozen", False) else MODULE_DIR
+RUNTIME_ROOT = os.path.abspath(getattr(sys, "_MEIPASS", MODULE_DIR))
+CWD_UPLOAD_ROOT = os.path.abspath(os.path.join(os.getcwd(), UPLOAD_FOLDER))
+APP_UPLOAD_ROOT = os.path.abspath(os.path.join(APP_ROOT, UPLOAD_FOLDER))
 
-os.makedirs(UPLOAD_ROOT, exist_ok=True)
+def _has_any_entries(path):
+    try:
+        with os.scandir(path) as it:
+            for _ in it:
+                return True
+    except OSError:
+        return False
+    return False
+
+
+def _select_upload_root():
+    # Prefer existing non-empty roots first, then existing roots, then create one.
+    preferred = []
+    for path in (APP_UPLOAD_ROOT, CWD_UPLOAD_ROOT):
+        if os.path.isdir(path) and _has_any_entries(path):
+            preferred.append(path)
+    for path in (APP_UPLOAD_ROOT, CWD_UPLOAD_ROOT):
+        if os.path.isdir(path) and path not in preferred:
+            preferred.append(path)
+
+    # If neither root exists, prefer cwd for creation, then app root as fallback.
+    for path in (CWD_UPLOAD_ROOT, APP_UPLOAD_ROOT):
+        if path not in preferred:
+            preferred.append(path)
+
+    for path in preferred:
+        try:
+            os.makedirs(path, exist_ok=True)
+            return path
+        except OSError:
+            continue
+
+    raise OSError("Unable to create shared_files in either app or current directory")
+
+
+UPLOAD_ROOT = _select_upload_root()
+
+SEARCH_ROOTS = [os.getcwd(), APP_ROOT, MODULE_DIR, RUNTIME_ROOT]
+FAVICON_CANDIDATES = [os.path.abspath(os.path.join(root, "Images", "favicon.ico")) for root in SEARCH_ROOTS]
+FAVICON_PATH = next((path for path in FAVICON_CANDIDATES if os.path.isfile(path)), None)
+FAVICON_PNG_CANDIDATES = [os.path.abspath(os.path.join(root, "Images", "logo.png")) for root in SEARCH_ROOTS]
+FAVICON_PNG_PATH = next((path for path in FAVICON_PNG_CANDIDATES if os.path.isfile(path)), None)
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB hard safety cap
 STREAM_CHUNK_SIZE = 1024 * 1024  # 1 MB
@@ -5335,17 +5372,21 @@ SERVER_CTX = ServerContext(
 class CustomHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/favicon.ico"):
-            if not FAVICON_PATH:
-                self.send_error(404, "Favicon not found")
-                return
-
             try:
-                with open(FAVICON_PATH, "rb") as icon_file:
+                icon_path = FAVICON_PATH or FAVICON_PNG_PATH
+                if not icon_path:
+                    self.send_error(404, "Favicon not found")
+                    return
+
+                content_type = "image/x-icon" if icon_path.lower().endswith(".ico") else "image/png"
+
+                with open(icon_path, "rb") as icon_file:
                     icon_bytes = icon_file.read()
                 self.send_response(200)
-                self.send_header("Content-type", "image/x-icon")
+                self.send_header("Content-type", content_type)
                 self.send_header("Content-Length", str(len(icon_bytes)))
-                self.send_header("Cache-Control", "public, max-age=86400")
+                self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+                self.send_header("Pragma", "no-cache")
                 self.end_headers()
                 self.wfile.write(icon_bytes)
             except OSError:
@@ -5379,18 +5420,29 @@ def main():
     print(f"[i] Share root: {UPLOAD_ROOT}")
 
     should_select_downloads = not ALLOW_UPLOADS or (ALLOW_UPLOADS and ALLOW_DOWNLOADS)
+    has_existing_entries = _has_any_entries(UPLOAD_ROOT)
 
     if should_select_downloads:
-        if ALLOW_UPLOADS:
-            print("[i] Select files/folders clients can download.")
+        if has_existing_entries:
+            if ALLOW_UPLOADS:
+                print("[i] Select files/folders clients can download.")
+            else:
+                print("[i] Download-only mode: select files/folders clients can access.")
+            selected = app_get_download_only_allowlist()
+            if not selected:
+                if not ALLOW_UPLOADS:
+                    print("[-] No items selected. Server not started.")
+                    return
+                print("[i] No items selected. Starting with uploads enabled.")
+                ALLOWED_PATHS = set()
+            else:
+                ALLOWED_PATHS = {os.path.abspath(p) for p in selected}
+                print(f"[+] Download access set with {len(ALLOWED_PATHS)} selected items.")
         else:
-            print("[i] Download-only mode: select files/folders clients can access.")
-        selected = app_get_download_only_allowlist()
-        if not selected:
-            print("[-] No items selected. Server not started.")
-            return
-        ALLOWED_PATHS = {os.path.abspath(p) for p in selected}
-        print(f"[+] Download access set with {len(ALLOWED_PATHS)} selected items.")
+            if not ALLOW_UPLOADS:
+                print("[-] shared_files is empty. Add files first, then restart.")
+                return
+            print("[i] shared_files is empty. Server will start and new uploads will be available.")
     elif ALLOW_UPLOADS and not ALLOW_DOWNLOADS:
         print("[i] Downloads disabled. Server will start with no files available for download.")
 
