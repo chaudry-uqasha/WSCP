@@ -1982,14 +1982,14 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
                     <div class="main-content">
                         <div class="toolbar">
-                            <button id="sidebar-toggle" aria-label="Toggle sidebar">â‡†</button>
+                            <button id="sidebar-toggle" aria-label="Toggle sidebar">⇆</button>
                             <button id="upload-btn">Upload</button>
                             <button id="mkdir-btn">New Folder</button>
                             <button id="manage-btn">Manage</button>
                             <button id="search-toggle">Search</button>
                             <div class="search-wrap" id="search-wrap">
                                 <input id="search-input" type="text" placeholder="Search files in current folder" aria-label="Search files" />
-                                <button id="search-close" aria-label="Close search">âœ•</button>
+                                <button id="search-close" aria-label="Close search">✕</button>
                             </div>
                             {"<span class='mode-badge'>Download Only</span>" if (not ALLOW_UPLOADS) else ("<span class='mode-badge'>Upload Only</span>" if (ALLOW_UPLOADS and not ALLOW_DOWNLOADS) else ("<span class='mode-badge'>Restricted Downloads</span>" if bool(ALLOWED_PATHS) else ""))}
                             <div class="spacer"></div>
@@ -2025,7 +2025,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     <div class="modal-content">
                         <div class="modal-header">
                             <h2 id="modal-title">File Viewer</h2>
-                            <button class="close-btn" id="file-close-btn">âœ•</button>
+                            <button class="close-btn" id="file-close-btn">✕</button>
                         </div>
                         <div class="modal-body" id="modal-body"></div>
                     </div>
@@ -2035,7 +2035,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     <div class="modal-content">
                         <div class="modal-header">
                             <h2 id="image-modal-title">Image Viewer</h2>
-                            <button class="close-btn" id="image-close-btn">âœ•</button>
+                            <button class="close-btn" id="image-close-btn">✕</button>
                         </div>
                         <div class="image-viewer-body">
                             <div class="image-nav">
@@ -2054,7 +2054,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     <div class="modal-content">
                         <div class="modal-header">
                             <h2 id="video-modal-title">Video Player</h2>
-                            <button class="close-btn" id="video-close-btn">âœ•</button>
+                            <button class="close-btn" id="video-close-btn">✕</button>
                         </div>
                         <div class="video-viewer-body">
                             <div class="video-nav">
@@ -2073,7 +2073,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     <div class="modal-content">
                         <div class="modal-header">
                             <h2 id="audio-modal-title">Audio Player</h2>
-                            <button class="close-btn" id="audio-close-btn">âœ•</button>
+                            <button class="close-btn" id="audio-close-btn">✕</button>
                         </div>
                         <div class="audio-player-body">
                             <div class="audio-nav">
@@ -2158,10 +2158,10 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         const toggleBtn = document.getElementById('sidebar-toggle');
                         if (!sidebar || !toggleBtn) return;
                         if (isMobileViewport()) {{
-                            toggleBtn.textContent = sidebar.classList.contains('mobile-open') ? 'âœ•' : 'â˜°';
+                            toggleBtn.textContent = sidebar.classList.contains('mobile-open') ? '✕' : '☰';
                             return;
                         }}
-                        toggleBtn.textContent = sidebar.classList.contains('hidden') ? 'â˜°' : 'â‡†';
+                        toggleBtn.textContent = sidebar.classList.contains('hidden') ? '☰' : '⇆';
                     }}
 
                     function closeMobileSidebar() {{
@@ -3154,7 +3154,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         div.style.marginLeft = (depth * 15) + 'px';
                         
                         let html = '<span class="tree-toggle">' + (shouldOpen ? '- ' : '+ ') + '</span>';
-                        html += 'ðŸ“ ' + node.name;
+                        html += '📁 ' + node.name;
                         
                         div.innerHTML = html;
                         div.dataset.path = node.path;
@@ -3763,7 +3763,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     function renderActiveImage() {{
                         if (activeImageIndex < 0 || activeImageIndex >= imageFilesInCurrentFolder.length) return;
                         const active = imageFilesInCurrentFolder[activeImageIndex];
-                        imageModalTitle.textContent = 'ðŸ–¼ ' + active.name;
+                        imageModalTitle.textContent = '🖼 ' + active.name;
                         imageCounter.textContent = (activeImageIndex + 1) + ' / ' + imageFilesInCurrentFolder.length;
                         imagePreview.src = '/image?path=' + encodeURIComponent(active.path);
                         imagePrevBtn.disabled = activeImageIndex === 0;
@@ -3808,7 +3808,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     function renderActiveVideo() {{
                         if (activeVideoIndex < 0 || activeVideoIndex >= videoFilesInCurrentFolder.length) return;
                         const active = videoFilesInCurrentFolder[activeVideoIndex];
-                        videoModalTitle.textContent = 'â–¶ ' + active.name;
+                        videoModalTitle.textContent = '▶ ' + active.name;
                         videoCounter.textContent = (activeVideoIndex + 1) + ' / ' + videoFilesInCurrentFolder.length;
                         videoPreview.src = '/video?path=' + encodeURIComponent(active.path);
                         videoPrevBtn.disabled = activeVideoIndex === 0;
@@ -3853,7 +3853,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     function renderActiveAudio() {{
                         if (activeAudioIndex < 0 || activeAudioIndex >= audioFilesInCurrentFolder.length) return;
                         const active = audioFilesInCurrentFolder[activeAudioIndex];
-                        audioModalTitle.textContent = 'â™ª ' + active.name;
+                        audioModalTitle.textContent = '♪ ' + active.name;
                         audioCounter.textContent = (activeAudioIndex + 1) + ' / ' + audioFilesInCurrentFolder.length;
                         audioPreview.src = '/audio?path=' + encodeURIComponent(active.path);
                         audioPrevBtn.disabled = activeAudioIndex === 0;
@@ -3895,7 +3895,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                                 throw new Error(msg || 'Preview unavailable');
                             }}
                             const content = await res.text();
-                            modalTitle.textContent = 'ðŸ“„ ' + fileName;
+                            modalTitle.textContent = '📄 ' + fileName;
                             modalBody.textContent = content;
                             modal.classList.add('show');
                         }} catch (e) {{
@@ -4127,7 +4127,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         
                         // Root button
                         const rootBtn = document.createElement('button');
-                        rootBtn.textContent = 'ðŸŒ²';
+                        rootBtn.textContent = '🌲';
                         rootBtn.addEventListener('click', function() {{
                             loadFolderContents('{UPLOAD_FOLDER}');
                             updateBreadcrumb('{UPLOAD_FOLDER}');
