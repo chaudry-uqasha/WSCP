@@ -6,8 +6,6 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".ogg"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".aac"}
 PDF_EXTENSIONS = {".pdf"}
-WORD_EXTENSIONS = {".docx"}
-SHEET_EXTENSIONS = {".xlsx", ".xls", ".csv"}
 
 
 def sanitize_filename(filename):
@@ -131,10 +129,8 @@ def is_pdf_file(file_path):
 
 
 def is_word_file(file_path):
-    _, ext = os.path.splitext(file_path or "")
-    return ext.lower() in WORD_EXTENSIONS
+    return False
 
 
 def is_sheet_file(file_path):
-    _, ext = os.path.splitext(file_path or "")
-    return ext.lower() in SHEET_EXTENSIONS
+    return False

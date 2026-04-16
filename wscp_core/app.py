@@ -21,6 +21,11 @@ PROJECT_ROOT = os.path.abspath(os.path.join(MODULE_DIR, ".."))
 WORKSPACE_UPLOAD_ROOT = os.path.abspath(os.path.join(PROJECT_ROOT, UPLOAD_FOLDER))
 LEGACY_UPLOAD_ROOT = os.path.abspath(os.path.join(MODULE_DIR, UPLOAD_FOLDER))
 UPLOAD_ROOT = WORKSPACE_UPLOAD_ROOT if os.path.isdir(WORKSPACE_UPLOAD_ROOT) else LEGACY_UPLOAD_ROOT
+FAVICON_CANDIDATES = [
+    os.path.abspath(os.path.join(PROJECT_ROOT, "Images", "favicon.ico")),
+    os.path.abspath(os.path.join(MODULE_DIR, "Images", "favicon.ico")),
+]
+FAVICON_PATH = next((path for path in FAVICON_CANDIDATES if os.path.isfile(path)), None)
 
 os.makedirs(UPLOAD_ROOT, exist_ok=True)
 
@@ -172,6 +177,24 @@ SERVER_CTX = ServerContext(
 
 class CustomHandler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path.startswith("/favicon.ico"):
+            if not FAVICON_PATH:
+                self.send_error(404, "Favicon not found")
+                return
+
+            try:
+                with open(FAVICON_PATH, "rb") as icon_file:
+                    icon_bytes = icon_file.read()
+                self.send_response(200)
+                self.send_header("Content-type", "image/x-icon")
+                self.send_header("Content-Length", str(len(icon_bytes)))
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.end_headers()
+                self.wfile.write(icon_bytes)
+            except OSError:
+                self.send_error(500, "Unable to load favicon")
+            return
+
         if self.path == "/":
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")

@@ -1,3 +1,777 @@
+﻿import os
+import time
+
+
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+VIDEO_EXTENSIONS = {".mp4", ".webm", ".ogg"}
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".aac"}
+PDF_EXTENSIONS = {".pdf"}
+
+
+def sanitize_filename(filename):
+    cleaned = os.path.basename((filename or "").replace("\x00", "")).strip()
+    return cleaned or f"upload_{int(time.time())}.bin"
+
+
+def sanitize_folder_name(folder_name):
+    raw = (folder_name or "").replace("\x00", "").strip()
+    raw = raw.replace("\\", "/").split("/")[-1].strip()
+    if not raw or raw in (".", ".."):
+        return None
+    invalid_chars = set('<>:"/\\|?*')
+    if any(ch in invalid_chars for ch in raw):
+        return None
+    if raw.endswith(" ") or raw.endswith("."):
+        return None
+    return raw
+
+
+def sanitize_entry_name(name, is_dir=False):
+    raw = (name or "").replace("\x00", "").strip()
+    raw = raw.replace("\\", "/").split("/")[-1].strip()
+    if not raw or raw in (".", ".."):
+        return None
+    invalid_chars = set('<>:"/\\|?*')
+    if any(ch in invalid_chars for ch in raw):
+        return None
+    if raw.endswith(" ") or raw.endswith("."):
+        return None
+    if is_dir:
+        return sanitize_folder_name(raw)
+    return raw
+
+
+def get_unique_file_path(directory, filename):
+    base_name = sanitize_filename(filename)
+    stem, ext = os.path.splitext(base_name)
+    candidate = os.path.join(directory, base_name)
+    counter = 1
+    while os.path.exists(candidate):
+        candidate = os.path.join(directory, f"{stem} ({counter}){ext}")
+        counter += 1
+    return candidate
+
+
+def get_unique_dir_path(directory, folder_name):
+    base_name = sanitize_folder_name(folder_name) or f"folder_{int(time.time())}"
+    candidate = os.path.join(directory, base_name)
+    counter = 1
+    while os.path.exists(candidate):
+        candidate = os.path.join(directory, f"{base_name} ({counter})")
+        counter += 1
+    return candidate
+
+
+def get_unique_target_path(directory, desired_name, is_dir):
+    if is_dir:
+        return get_unique_dir_path(directory, desired_name)
+    return get_unique_file_path(directory, desired_name)
+
+
+def count_path_units(abs_path):
+    if os.path.isfile(abs_path):
+        return 1
+    if not os.path.isdir(abs_path):
+        return 0
+
+    total = 1
+    for _, dirs, files in os.walk(abs_path):
+        total += len(dirs) + len(files)
+    return total
+
+
+def parse_bool(value):
+    return str(value).lower() in ("1", "true", "yes", "y", "on")
+
+
+def is_likely_text_file(file_path, sample_size=65536):
+    try:
+        with open(file_path, "rb") as f:
+            sample = f.read(sample_size)
+    except OSError:
+        return False
+
+    if not sample:
+        return True
+    if b"\x00" in sample:
+        return False
+
+    try:
+        decoded = sample.decode("utf-8")
+    except UnicodeDecodeError:
+        decoded = sample.decode("utf-8", errors="ignore")
+        if not decoded:
+            return False
+
+    printable = sum(1 for ch in decoded if ch.isprintable() or ch in "\r\n\t")
+    ratio = printable / max(len(decoded), 1)
+    return ratio >= 0.86
+
+
+def is_image_file(file_path):
+    _, ext = os.path.splitext(file_path or "")
+    return ext.lower() in IMAGE_EXTENSIONS
+
+
+def is_video_file(file_path):
+    _, ext = os.path.splitext(file_path or "")
+    return ext.lower() in VIDEO_EXTENSIONS
+
+
+def is_audio_file(file_path):
+    _, ext = os.path.splitext(file_path or "")
+    return ext.lower() in AUDIO_EXTENSIONS
+
+
+def is_pdf_file(file_path):
+    _, ext = os.path.splitext(file_path or "")
+    return ext.lower() in PDF_EXTENSIONS
+
+
+def is_word_file(file_path):
+    return False
+
+
+def is_sheet_file(file_path):
+    return False
+
+import threading
+import time
+import uuid
+
+TASK_TTL_SECONDS = 3600
+TASKS = {}
+TASKS_LOCK = threading.Lock()
+
+
+def _cleanup_tasks():
+    cutoff = time.time() - TASK_TTL_SECONDS
+    with TASKS_LOCK:
+        old_ids = [tid for tid, t in TASKS.items() if t.get("updated_at", 0) < cutoff]
+        for tid in old_ids:
+            TASKS.pop(tid, None)
+
+
+def create_task(kind, message="Queued"):
+    _cleanup_tasks()
+    task_id = uuid.uuid4().hex
+    now = time.time()
+    with TASKS_LOCK:
+        TASKS[task_id] = {
+            "task_id": task_id,
+            "kind": kind,
+            "status": "queued",
+            "phase": "queued",
+            "message": message,
+            "bytes_done": 0,
+            "total_bytes": 0,
+            "percent": 0,
+            "speed_bps": 0,
+            "hash_sha256": None,
+            "error": None,
+            "created_at": now,
+            "updated_at": now,
+            "started_at": now,
+        }
+    return task_id
+
+
+def update_task(task_id, **updates):
+    if not task_id:
+        return
+    with TASKS_LOCK:
+        task = TASKS.get(task_id)
+        if not task:
+            return
+        task.update(updates)
+        task["updated_at"] = time.time()
+
+
+def update_task_progress(task_id, bytes_done=None, total_bytes=None, phase=None, message=None):
+    if not task_id:
+        return
+    with TASKS_LOCK:
+        task = TASKS.get(task_id)
+        if not task:
+            return
+        if bytes_done is not None:
+            task["bytes_done"] = max(0, int(bytes_done))
+        if total_bytes is not None:
+            task["total_bytes"] = max(0, int(total_bytes))
+        if phase is not None:
+            task["phase"] = phase
+        if message is not None:
+            task["message"] = message
+        task["status"] = "running"
+        elapsed = max(time.time() - task.get("started_at", time.time()), 0.001)
+        task["speed_bps"] = int(task.get("bytes_done", 0) / elapsed)
+        total = task.get("total_bytes", 0)
+        if total > 0:
+            task["percent"] = min(100, int((task.get("bytes_done", 0) * 100) / total))
+        task["updated_at"] = time.time()
+
+
+def finish_task(task_id, message="Completed", hash_sha256=None):
+    if not task_id:
+        return
+    with TASKS_LOCK:
+        task = TASKS.get(task_id)
+        if not task:
+            return
+        if hash_sha256:
+            task["hash_sha256"] = hash_sha256
+        total = task.get("total_bytes", 0)
+        if total > 0:
+            task["bytes_done"] = total
+        task["percent"] = 100
+        task["status"] = "done"
+        task["phase"] = "done"
+        task["message"] = message
+        task["updated_at"] = time.time()
+
+
+def fail_task(task_id, error_message):
+    if not task_id:
+        return
+    with TASKS_LOCK:
+        task = TASKS.get(task_id)
+        if not task:
+            return
+        task["status"] = "error"
+        task["phase"] = "error"
+        task["message"] = "Failed"
+        task["error"] = str(error_message)
+        task["updated_at"] = time.time()
+
+
+def get_task(task_id):
+    with TASKS_LOCK:
+        task = TASKS.get(task_id)
+        if not task:
+            return None
+        return dict(task)
+
+import os
+import socket
+from datetime import datetime
+from urllib.parse import unquote
+
+
+def get_lan_ip():
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.connect(("8.8.8.8", 80))
+        ip = sock.getsockname()[0]
+        sock.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+
+def to_web_path(abs_path, upload_root, upload_folder):
+    rel = os.path.relpath(abs_path, upload_root)
+    if rel == ".":
+        return upload_folder
+    return f"{upload_folder}/" + rel.replace("\\", "/")
+
+
+def resolve_client_path(raw_path, upload_root, upload_folder):
+    if not raw_path:
+        return upload_root
+
+    normalized = raw_path.replace("\\", "/").strip()
+    if normalized in ("", "/", upload_folder):
+        return upload_root
+
+    if normalized.startswith(upload_folder + "/"):
+        rel = normalized[len(upload_folder) + 1 :]
+    else:
+        rel = normalized.lstrip("/")
+
+    candidate = os.path.abspath(os.path.join(upload_root, rel))
+    if candidate == upload_root or candidate.startswith(upload_root + os.sep):
+        return candidate
+
+    return upload_root
+
+
+def is_target_allowed(abs_path, allow_uploads, allow_downloads, allowed_paths):
+    if not allow_downloads:
+        return False
+    if not allowed_paths:
+        return allow_uploads
+
+    norm = os.path.abspath(abs_path)
+    for allowed in allowed_paths:
+        if norm == allowed or norm.startswith(allowed + os.sep):
+            return True
+    return False
+
+
+def is_path_visible(abs_path, upload_root, allow_uploads, allow_downloads, allowed_paths):
+    norm = os.path.abspath(abs_path)
+
+    if allow_uploads and not allow_downloads:
+        if norm == upload_root:
+            return True
+        if not allowed_paths:
+            return False
+        for allowed in allowed_paths:
+            if norm == allowed or norm.startswith(allowed + os.sep):
+                return True
+        if os.path.isdir(norm):
+            prefix = norm + os.sep
+            for allowed in allowed_paths:
+                if allowed.startswith(prefix):
+                    return True
+        return False
+
+    if not allow_downloads:
+        return norm == upload_root
+
+    if allow_uploads and not allowed_paths:
+        return True
+    if not allowed_paths:
+        return False
+    if is_target_allowed(norm, allow_uploads, allow_downloads, allowed_paths):
+        return True
+
+    if os.path.isdir(norm):
+        prefix = norm + os.sep
+        for allowed in allowed_paths:
+            if allowed.startswith(prefix):
+                return True
+    return False
+
+
+def collect_files_for_paths(client_paths, upload_root, resolve_client_path_fn, is_target_allowed_fn):
+    files = []
+    for raw in client_paths:
+        abs_path = resolve_client_path_fn(unquote(raw))
+        if not is_target_allowed_fn(abs_path):
+            continue
+        if os.path.isfile(abs_path):
+            rel = os.path.relpath(abs_path, upload_root).replace("\\", "/")
+            files.append((abs_path, rel, os.path.getsize(abs_path)))
+        elif os.path.isdir(abs_path):
+            for root, _, names in os.walk(abs_path):
+                for name in names:
+                    file_abs = os.path.join(root, name)
+                    if not is_target_allowed_fn(file_abs):
+                        continue
+                    rel = os.path.relpath(file_abs, upload_root).replace("\\", "/")
+                    try:
+                        size = os.path.getsize(file_abs)
+                    except OSError:
+                        size = 0
+                    files.append((file_abs, rel, size))
+    return files
+
+
+def list_shareable_entries(upload_root):
+    entries = []
+    for root, dirs, files in os.walk(upload_root):
+        dirs.sort()
+        files.sort()
+        for name in dirs:
+            abs_path = os.path.join(root, name)
+            rel = os.path.relpath(abs_path, upload_root).replace("\\", "/")
+            entries.append({"abs": abs_path, "rel": rel, "kind": "Folder"})
+        for name in files:
+            abs_path = os.path.join(root, name)
+            rel = os.path.relpath(abs_path, upload_root).replace("\\", "/")
+            entries.append({"abs": abs_path, "rel": rel, "kind": "File"})
+    return entries
+
+
+def build_folder_tree(path, upload_root, upload_folder, is_path_visible_fn):
+    tree = {
+        "name": os.path.basename(path) or "[root]",
+        "path": to_web_path(path, upload_root, upload_folder),
+        "children": [],
+    }
+
+    try:
+        for item in sorted(os.listdir(path)):
+            item_path = os.path.join(path, item)
+            if os.path.isdir(item_path) and is_path_visible_fn(item_path):
+                tree["children"].append(
+                    build_folder_tree(item_path, upload_root, upload_folder, is_path_visible_fn)
+                )
+    except PermissionError:
+        pass
+
+    return tree
+
+
+def get_folder_contents(
+    path,
+    upload_root,
+    upload_folder,
+    is_path_visible_fn,
+    is_likely_text_file_fn,
+    is_image_file_fn,
+    is_video_file_fn,
+    is_audio_file_fn,
+    is_pdf_file_fn,
+    is_word_file_fn,
+    is_sheet_file_fn,
+):
+    items = []
+    try:
+        for item in sorted(os.listdir(path)):
+            item_path = os.path.join(path, item)
+            if not is_path_visible_fn(item_path):
+                continue
+            is_dir = os.path.isdir(item_path)
+
+            try:
+                mod_time = os.path.getmtime(item_path)
+                date_str = datetime.fromtimestamp(mod_time).strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                date_str = "Unknown"
+
+            size = 0
+            if not is_dir:
+                try:
+                    size = os.path.getsize(item_path)
+                except Exception:
+                    pass
+
+            is_text_file = (not is_dir) and is_likely_text_file_fn(item_path)
+            is_image = (not is_dir) and is_image_file_fn(item_path)
+            is_video = (not is_dir) and is_video_file_fn(item_path)
+            is_audio = (not is_dir) and is_audio_file_fn(item_path)
+            is_pdf = (not is_dir) and is_pdf_file_fn(item_path)
+            is_word = (not is_dir) and is_word_file_fn(item_path)
+            is_sheet = (not is_dir) and is_sheet_file_fn(item_path)
+
+            items.append(
+                {
+                    "name": item,
+                    "path": to_web_path(item_path, upload_root, upload_folder),
+                    "is_dir": is_dir,
+                    "size": size,
+                    "date": date_str,
+                    "is_text": is_text_file,
+                    "is_image": is_image,
+                    "is_video": is_video,
+                    "is_audio": is_audio,
+                    "is_pdf": is_pdf,
+                    "is_word": is_word,
+                    "is_sheet": is_sheet,
+                }
+            )
+    except PermissionError:
+        pass
+
+    return items
+
+class _CoreAccessNamespace:
+    pass
+
+
+core_access = _CoreAccessNamespace()
+core_access.get_lan_ip = get_lan_ip
+core_access.to_web_path = to_web_path
+core_access.resolve_client_path = resolve_client_path
+core_access.is_target_allowed = is_target_allowed
+core_access.is_path_visible = is_path_visible
+core_access.collect_files_for_paths = collect_files_for_paths
+core_access.list_shareable_entries = list_shareable_entries
+core_access.build_folder_tree = build_folder_tree
+core_access.get_folder_contents = get_folder_contents
+
+try:
+    from textual.app import App
+    from textual.widgets import Button, Static, Checkbox
+    from textual.containers import Vertical, Horizontal, VerticalScroll
+    TEXTUAL_AVAILABLE = True
+except Exception:
+    TEXTUAL_AVAILABLE = False
+
+try:
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.completion import FuzzyWordCompleter
+    PROMPT_TOOLKIT_AVAILABLE = True
+except Exception:
+    PROMPT_TOOLKIT_AVAILABLE = False
+
+
+if TEXTUAL_AVAILABLE:
+    class AccessSelectorApp(App):
+        BINDINGS = [
+            ("ctrl+a", "select_all_items", "Select All"),
+            ("ctrl+d", "clear_items", "Clear"),
+        ]
+
+        CSS = """
+        Screen {
+            background: #0a0a0a;
+            color: #ffffff;
+        }
+        #title {
+            padding: 1 2 0 2;
+            text-style: bold;
+            color: #ffffff;
+        }
+        #hint {
+            padding: 0 2 1 2;
+            color: #bbbbbb;
+        }
+        #list {
+            height: 1fr;
+            margin: 0 2;
+            border: solid #3a3a3a;
+            padding: 0 1;
+        }
+        #status {
+            padding: 1 2 0 2;
+            color: #d0d0d0;
+        }
+        #actions {
+            height: auto;
+            padding: 1 2;
+        }
+        Button {
+            margin-right: 1;
+            min-width: 16;
+        }
+        Checkbox {
+            margin: 0;
+            padding: 0 1;
+        }
+        """
+
+        def __init__(self, entries):
+            super().__init__()
+            self.entries = entries
+            self.status = None
+
+        def compose(self):
+            yield Vertical(
+                Static("Download Access Selector", id="title"),
+                Static("Mouse: click checkboxes to select. Ctrl+A select all, Ctrl+D clear.", id="hint"),
+                VerticalScroll(id="list"),
+                Static("Selected: 0", id="status"),
+                Horizontal(
+                    Button("Select All", id="select_all"),
+                    Button("Clear", id="clear"),
+                    Button("Start Server", id="start", variant="success"),
+                    Button("Cancel", id="cancel", variant="error"),
+                    id="actions",
+                ),
+            )
+
+        def on_mount(self) -> None:
+            self.status = self.query_one("#status", Static)
+            list_view = self.query_one("#list", VerticalScroll)
+            for idx, item in enumerate(self.entries):
+                icon = "[DIR]" if item["kind"] == "Folder" else "[FILE]"
+                cb = Checkbox(f"{icon} {item['rel']}", id=f"entry-{idx}")
+                list_view.mount(cb)
+            self.update_status()
+
+        def get_selected_indices(self):
+            selected = []
+            for cb in self.query(Checkbox):
+                if cb.value and cb.id and cb.id.startswith("entry-"):
+                    selected.append(int(cb.id.split("-", 1)[1]))
+            return selected
+
+        def update_status(self):
+            self.status.update(f"Selected: {len(self.get_selected_indices())} / {len(self.entries)}")
+
+        def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+            self.update_status()
+
+        def action_select_all_items(self):
+            for cb in self.query(Checkbox):
+                cb.value = True
+            self.update_status()
+
+        def action_clear_items(self):
+            for cb in self.query(Checkbox):
+                cb.value = False
+            self.update_status()
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == "select_all":
+                self.action_select_all_items()
+            elif event.button.id == "clear":
+                self.action_clear_items()
+            elif event.button.id == "start":
+                selected_indices = self.get_selected_indices()
+                if not selected_indices:
+                    self.status.update("Select at least one item to continue.")
+                    return
+                selected_paths = {self.entries[i]["abs"] for i in selected_indices}
+                self.exit(selected_paths)
+            elif event.button.id == "cancel":
+                self.exit(None)
+
+
+def cli_access_selector(entries):
+    if not entries:
+        return set()
+
+    selected_indexes = set()
+    search_term = ""
+    max_show = 30
+    active_view = []
+
+    root_names = set()
+    for item in entries:
+        rel = item["rel"].replace("\\", "/")
+        root_names.add(rel.split("/", 1)[0])
+    root_indexes = [
+        i for i, item in enumerate(entries)
+        if item["rel"].replace("\\", "/").split("/", 1)[0] in root_names
+        and "/" not in item["rel"].replace("\\", "/")
+    ]
+
+    if not root_indexes:
+        root_indexes = list(range(len(entries)))
+
+    def print_menu():
+        print("\n=== Access Selector ===")
+        print("1. Search")
+        print("2. List directory and select files")
+        print("3. Select all")
+        print("4. Done")
+        print("q. Quit")
+        print(f"Selected: {len(selected_indexes)}")
+
+    def current_filtered_indexes():
+        if not search_term:
+            return list(range(len(entries)))
+        needle = search_term.lower()
+        return [
+            i for i, item in enumerate(entries)
+            if needle in item["rel"].lower() or needle in item["kind"].lower()
+        ]
+
+    def print_visible(title, shown):
+        print(f"\n--- {title} ---")
+        print(f"Visible: {len(shown)} | Selected: {len(selected_indexes)}")
+        print("----------------------------------------")
+        if not shown:
+            print("No entries to show.")
+            return
+        capped = shown[:max_show]
+        for n, idx in enumerate(capped, start=1):
+            item = entries[idx]
+            mark = "[x]" if idx in selected_indexes else "[ ]"
+            kind_mark = "D" if item["kind"] == "Folder" else "F"
+            print(f"{n:4d}. {mark} [{kind_mark}] {item['rel']}")
+        if len(shown) > len(capped):
+            print(f"... showing first {len(capped)} of {len(shown)}.")
+
+    def prompt_search_text():
+        if PROMPT_TOOLKIT_AVAILABLE:
+            words = [item["rel"] for item in entries]
+            completer = FuzzyWordCompleter(words, WORD=True)
+            session = PromptSession()
+            return session.prompt(
+                "search (live suggestions): ",
+                completer=completer,
+                complete_while_typing=True,
+            ).strip()
+        return input("search text: ").strip()
+
+    def parse_toggle_numbers(spec, shown):
+        toggles = []
+        if not spec:
+            return toggles
+        spec = spec.replace(",", " ")
+        parts = [p.strip() for p in spec.split() if p.strip()]
+        for part in parts:
+            if "-" in part:
+                left, right = part.split("-", 1)
+                if left.isdigit() and right.isdigit():
+                    start = int(left)
+                    end = int(right)
+                    if start > end:
+                        start, end = end, start
+                    for num in range(start, end + 1):
+                        if 1 <= num <= min(len(shown), max_show):
+                            toggles.append(shown[num - 1])
+            elif part.isdigit():
+                num = int(part)
+                if 1 <= num <= min(len(shown), max_show):
+                    toggles.append(shown[num - 1])
+        return toggles
+
+    while True:
+        print_menu()
+        try:
+            raw = input("action: ").strip()
+        except EOFError:
+            return set()
+        if not raw:
+            continue
+
+        lowered = raw.lower()
+        if lowered in ("q", "quit", "exit"):
+            return set()
+        if lowered in ("4", "done", "start"):
+            return {entries[i]["abs"] for i in sorted(selected_indexes)}
+
+        if lowered in ("1", "search"):
+            term = prompt_search_text()
+            search_term = term
+            active_view = current_filtered_indexes() if term else root_indexes[:]
+            label = f"Search results for '{term}'" if term else "Directory listing"
+            print_visible(label, active_view)
+            if active_view:
+                spec = input(
+                    "Do u wanna select files or folders? numbers (q to quit, space-separated or range e.g. 1 3-5): "
+                ).strip()
+                if spec.lower() in ("q", "quit"):
+                    active_view = []
+                    continue
+                if spec:
+                    toggles = parse_toggle_numbers(spec, active_view)
+                    if toggles:
+                        for idx in toggles:
+                            if idx in selected_indexes:
+                                selected_indexes.remove(idx)
+                            else:
+                                selected_indexes.add(idx)
+                        print(f"Selected now: {len(selected_indexes)}")
+            continue
+
+        if lowered in ("2", "list", "list directory"):
+            search_term = ""
+            active_view = root_indexes[:]
+            print_visible("Directory listing", active_view)
+            if active_view:
+                spec = input(
+                    "Do u wanna select files or folders? numbers (q to quit, space-separated or range e.g. 1 3-5): "
+                ).strip()
+                if spec.lower() in ("q", "quit"):
+                    continue
+                if spec:
+                    toggles = parse_toggle_numbers(spec, active_view)
+                    if toggles:
+                        for idx in toggles:
+                            if idx in selected_indexes:
+                                selected_indexes.remove(idx)
+                            else:
+                                selected_indexes.add(idx)
+                        print(f"Selected now: {len(selected_indexes)}")
+                        return {entries[i]["abs"] for i in sorted(selected_indexes)}
+            continue
+
+        if lowered in ("3", "all", "select all"):
+            target = list(range(len(entries)))
+            for idx in target:
+                selected_indexes.add(idx)
+            print(f"Selected now: {len(selected_indexes)}")
+            return {entries[i]["abs"] for i in sorted(selected_indexes)}
+
+        print("Unknown action.")
+
 def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_paths):
     UPLOAD_FOLDER = upload_folder
     ALLOW_UPLOADS = allow_uploads
@@ -1208,14 +1982,14 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
                     <div class="main-content">
                         <div class="toolbar">
-                            <button id="sidebar-toggle" aria-label="Toggle sidebar">⇆</button>
+                            <button id="sidebar-toggle" aria-label="Toggle sidebar">â‡†</button>
                             <button id="upload-btn">Upload</button>
                             <button id="mkdir-btn">New Folder</button>
                             <button id="manage-btn">Manage</button>
                             <button id="search-toggle">Search</button>
                             <div class="search-wrap" id="search-wrap">
                                 <input id="search-input" type="text" placeholder="Search files in current folder" aria-label="Search files" />
-                                <button id="search-close" aria-label="Close search">✕</button>
+                                <button id="search-close" aria-label="Close search">âœ•</button>
                             </div>
                             {"<span class='mode-badge'>Download Only</span>" if (not ALLOW_UPLOADS) else ("<span class='mode-badge'>Upload Only</span>" if (ALLOW_UPLOADS and not ALLOW_DOWNLOADS) else ("<span class='mode-badge'>Restricted Downloads</span>" if bool(ALLOWED_PATHS) else ""))}
                             <div class="spacer"></div>
@@ -1251,7 +2025,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     <div class="modal-content">
                         <div class="modal-header">
                             <h2 id="modal-title">File Viewer</h2>
-                            <button class="close-btn" id="file-close-btn">✕</button>
+                            <button class="close-btn" id="file-close-btn">âœ•</button>
                         </div>
                         <div class="modal-body" id="modal-body"></div>
                     </div>
@@ -1261,7 +2035,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     <div class="modal-content">
                         <div class="modal-header">
                             <h2 id="image-modal-title">Image Viewer</h2>
-                            <button class="close-btn" id="image-close-btn">✕</button>
+                            <button class="close-btn" id="image-close-btn">âœ•</button>
                         </div>
                         <div class="image-viewer-body">
                             <div class="image-nav">
@@ -1280,7 +2054,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     <div class="modal-content">
                         <div class="modal-header">
                             <h2 id="video-modal-title">Video Player</h2>
-                            <button class="close-btn" id="video-close-btn">✕</button>
+                            <button class="close-btn" id="video-close-btn">âœ•</button>
                         </div>
                         <div class="video-viewer-body">
                             <div class="video-nav">
@@ -1299,7 +2073,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     <div class="modal-content">
                         <div class="modal-header">
                             <h2 id="audio-modal-title">Audio Player</h2>
-                            <button class="close-btn" id="audio-close-btn">✕</button>
+                            <button class="close-btn" id="audio-close-btn">âœ•</button>
                         </div>
                         <div class="audio-player-body">
                             <div class="audio-nav">
@@ -1384,10 +2158,10 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         const toggleBtn = document.getElementById('sidebar-toggle');
                         if (!sidebar || !toggleBtn) return;
                         if (isMobileViewport()) {{
-                            toggleBtn.textContent = sidebar.classList.contains('mobile-open') ? '✕' : '☰';
+                            toggleBtn.textContent = sidebar.classList.contains('mobile-open') ? 'âœ•' : 'â˜°';
                             return;
                         }}
-                        toggleBtn.textContent = sidebar.classList.contains('hidden') ? '☰' : '⇆';
+                        toggleBtn.textContent = sidebar.classList.contains('hidden') ? 'â˜°' : 'â‡†';
                     }}
 
                     function closeMobileSidebar() {{
@@ -2380,7 +3154,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         div.style.marginLeft = (depth * 15) + 'px';
                         
                         let html = '<span class="tree-toggle">' + (shouldOpen ? '- ' : '+ ') + '</span>';
-                        html += '📁 ' + node.name;
+                        html += 'ðŸ“ ' + node.name;
                         
                         div.innerHTML = html;
                         div.dataset.path = node.path;
@@ -2989,7 +3763,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     function renderActiveImage() {{
                         if (activeImageIndex < 0 || activeImageIndex >= imageFilesInCurrentFolder.length) return;
                         const active = imageFilesInCurrentFolder[activeImageIndex];
-                        imageModalTitle.textContent = '🖼 ' + active.name;
+                        imageModalTitle.textContent = 'ðŸ–¼ ' + active.name;
                         imageCounter.textContent = (activeImageIndex + 1) + ' / ' + imageFilesInCurrentFolder.length;
                         imagePreview.src = '/image?path=' + encodeURIComponent(active.path);
                         imagePrevBtn.disabled = activeImageIndex === 0;
@@ -3034,7 +3808,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     function renderActiveVideo() {{
                         if (activeVideoIndex < 0 || activeVideoIndex >= videoFilesInCurrentFolder.length) return;
                         const active = videoFilesInCurrentFolder[activeVideoIndex];
-                        videoModalTitle.textContent = '▶ ' + active.name;
+                        videoModalTitle.textContent = 'â–¶ ' + active.name;
                         videoCounter.textContent = (activeVideoIndex + 1) + ' / ' + videoFilesInCurrentFolder.length;
                         videoPreview.src = '/video?path=' + encodeURIComponent(active.path);
                         videoPrevBtn.disabled = activeVideoIndex === 0;
@@ -3079,7 +3853,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     function renderActiveAudio() {{
                         if (activeAudioIndex < 0 || activeAudioIndex >= audioFilesInCurrentFolder.length) return;
                         const active = audioFilesInCurrentFolder[activeAudioIndex];
-                        audioModalTitle.textContent = '♪ ' + active.name;
+                        audioModalTitle.textContent = 'â™ª ' + active.name;
                         audioCounter.textContent = (activeAudioIndex + 1) + ' / ' + audioFilesInCurrentFolder.length;
                         audioPreview.src = '/audio?path=' + encodeURIComponent(active.path);
                         audioPrevBtn.disabled = activeAudioIndex === 0;
@@ -3121,7 +3895,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                                 throw new Error(msg || 'Preview unavailable');
                             }}
                             const content = await res.text();
-                            modalTitle.textContent = '📄 ' + fileName;
+                            modalTitle.textContent = 'ðŸ“„ ' + fileName;
                             modalBody.textContent = content;
                             modal.classList.add('show');
                         }} catch (e) {{
@@ -3353,7 +4127,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         
                         // Root button
                         const rootBtn = document.createElement('button');
-                        rootBtn.textContent = '🌲';
+                        rootBtn.textContent = 'ðŸŒ²';
                         rootBtn.addEventListener('click', function() {{
                             loadFolderContents('{UPLOAD_FOLDER}');
                             updateBreadcrumb('{UPLOAD_FOLDER}');
@@ -3482,3 +4256,1157 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
             </body>
             </html>
             """
+
+import hashlib
+import json
+import mimetypes
+import os
+import shutil
+import tempfile
+from dataclasses import dataclass
+from http.server import BaseHTTPRequestHandler
+from urllib.parse import parse_qs, unquote, urlparse
+from zipfile import ZipFile
+
+
+
+@dataclass
+class ServerContext:
+    upload_folder: str
+    upload_root: str
+    allow_uploads: bool
+    allow_downloads: bool
+    max_upload_bytes: int
+    stream_chunk_size: int
+    resolve_client_path_fn: callable
+    to_web_path_fn: callable
+    is_target_allowed_fn: callable
+    is_path_visible_fn: callable
+    get_folder_contents_fn: callable
+    build_folder_tree_fn: callable
+    collect_files_for_paths_fn: callable
+    allow_new_path_for_session_fn: callable
+    remove_allowed_paths_under_fn: callable
+    move_allowed_paths_fn: callable
+    is_likely_text_file_fn: callable
+
+
+def send_json(handler: BaseHTTPRequestHandler, status_code, payload):
+    handler.send_response(status_code)
+    handler.send_header("Content-type", "application/json")
+    handler.end_headers()
+    handler.wfile.write(json.dumps(payload).encode("utf-8"))
+
+
+def stream_download(handler: BaseHTTPRequestHandler, file_path, download_name, ctx: ServerContext, task_id=None, hash_requested=False):
+    file_size = os.path.getsize(file_path)
+    if task_id:
+        update_task_progress(task_id, bytes_done=0, total_bytes=file_size, phase="downloading", message="Downloading")
+
+    hasher = hashlib.sha256() if hash_requested else None
+
+    try:
+        content_type = mimetypes.guess_type(download_name)[0] or "application/octet-stream"
+        handler.send_response(200)
+        handler.send_header("Content-Disposition", f"attachment; filename=\"{download_name}\"")
+        handler.send_header("Content-type", content_type)
+        handler.send_header("Content-Length", str(file_size))
+        handler.end_headers()
+
+        bytes_sent = 0
+        with open(file_path, "rb") as file_obj:
+            while True:
+                chunk = file_obj.read(ctx.stream_chunk_size)
+                if not chunk:
+                    break
+                handler.wfile.write(chunk)
+                bytes_sent += len(chunk)
+                if hasher:
+                    hasher.update(chunk)
+                if task_id:
+                    update_task_progress(task_id, bytes_done=bytes_sent, total_bytes=file_size, phase="downloading", message="Downloading")
+
+        if task_id:
+            digest = hasher.hexdigest() if hasher else None
+            finish_task(task_id, message="Download completed", hash_sha256=digest)
+    except (BrokenPipeError, ConnectionResetError):
+        if task_id:
+            fail_task(task_id, "Client disconnected")
+    except Exception as e:
+        if task_id:
+            fail_task(task_id, str(e))
+        else:
+            handler.send_error(500, f"Error: {e}")
+
+
+def stream_inline_media(handler: BaseHTTPRequestHandler, file_path, mime_type, chunk_size):
+    file_size = os.path.getsize(file_path)
+    range_header = handler.headers.get("Range")
+    start = 0
+    end = max(file_size - 1, 0)
+    status_code = 200
+
+    if range_header and range_header.startswith("bytes="):
+        try:
+            range_spec = range_header.split("=", 1)[1].strip()
+            if "," in range_spec:
+                raise ValueError("Multiple ranges not supported")
+
+            start_str, end_str = range_spec.split("-", 1)
+            if start_str:
+                start = int(start_str)
+                end = int(end_str) if end_str else end
+            else:
+                suffix_len = int(end_str)
+                if suffix_len <= 0:
+                    raise ValueError("Invalid suffix range")
+                start = max(file_size - suffix_len, 0)
+
+            if start < 0 or end < start or start >= file_size:
+                raise ValueError("Invalid byte range")
+            end = min(end, file_size - 1)
+            status_code = 206
+        except Exception:
+            handler.send_response(416)
+            handler.send_header("Content-Range", f"bytes */{file_size}")
+            handler.send_header("Accept-Ranges", "bytes")
+            handler.end_headers()
+            return
+
+    content_length = (end - start) + 1 if file_size > 0 else 0
+
+    handler.send_response(status_code)
+    handler.send_header("Content-type", mime_type)
+    handler.send_header("Accept-Ranges", "bytes")
+    handler.send_header("Content-Disposition", f"inline; filename=\"{os.path.basename(file_path)}\"")
+    handler.send_header("Content-Length", str(content_length))
+    if status_code == 206:
+        handler.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+    handler.end_headers()
+
+    with open(file_path, "rb") as file_obj:
+        if start:
+            file_obj.seek(start)
+        remaining = content_length
+        while remaining > 0:
+            chunk = file_obj.read(min(chunk_size, remaining))
+            if not chunk:
+                break
+            handler.wfile.write(chunk)
+            remaining -= len(chunk)
+
+
+def handle_get_request(handler: BaseHTTPRequestHandler, ctx: ServerContext):
+    path = handler.path
+
+    if path == "/folder-tree":
+        send_json(handler, 200, ctx.build_folder_tree_fn())
+        return True
+
+    if path.startswith("/task/new"):
+        parsed = urlparse(path)
+        kind = parse_qs(parsed.query).get("kind", ["generic"])[0]
+        task_id = create_task(kind, f"{kind.capitalize()} started")
+        send_json(handler, 200, {"task_id": task_id})
+        return True
+
+    if path.startswith("/progress"):
+        parsed = urlparse(path)
+        task_id = parse_qs(parsed.query).get("task_id", [""])[0]
+        task = get_task(task_id)
+        if not task:
+            send_json(handler, 404, {"error": "Task not found"})
+            return True
+        send_json(handler, 200, task)
+        return True
+
+    if path.startswith("/files-metadata"):
+        parsed = urlparse(path)
+        raw_path = parse_qs(parsed.query).get("path", [ctx.upload_folder])[0]
+        resolved = ctx.resolve_client_path_fn(unquote(raw_path))
+        if not ctx.is_path_visible_fn(resolved):
+            send_json(handler, 403, {"error": "Path not allowed in restricted mode"})
+            return True
+        send_json(handler, 200, ctx.get_folder_contents_fn(resolved))
+        return True
+
+    if path.startswith("/view"):
+        parsed = urlparse(path)
+        raw_path = parse_qs(parsed.query).get("path", [""])[0]
+        file_path = ctx.resolve_client_path_fn(unquote(raw_path))
+
+        if file_path and os.path.isfile(file_path):
+            if not ctx.is_target_allowed_fn(file_path):
+                handler.send_error(403, "Access denied")
+                return True
+            if not ctx.is_likely_text_file_fn(file_path):
+                handler.send_error(415, "Binary file preview is not supported")
+                return True
+            try:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                handler.send_response(200)
+                handler.send_header("Content-type", "text/plain; charset=utf-8")
+                handler.end_headers()
+                handler.wfile.write(content.encode("utf-8"))
+            except Exception as e:
+                handler.send_error(500, f"Error: {e}")
+            return True
+
+        handler.send_error(404, "File not found")
+        return True
+
+    if path.startswith("/image"):
+        parsed = urlparse(path)
+        raw_path = parse_qs(parsed.query).get("path", [""])[0]
+        file_path = ctx.resolve_client_path_fn(unquote(raw_path))
+
+        if not file_path or not os.path.isfile(file_path):
+            handler.send_error(404, "File not found")
+            return True
+        if not ctx.is_target_allowed_fn(file_path):
+            handler.send_error(403, "Access denied")
+            return True
+
+        mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        if not mime_type.startswith("image/"):
+            handler.send_error(415, "Image preview is only supported for image files")
+            return True
+
+        try:
+            file_size = os.path.getsize(file_path)
+            handler.send_response(200)
+            handler.send_header("Content-type", mime_type)
+            handler.send_header("Content-Length", str(file_size))
+            handler.send_header("Content-Disposition", f"inline; filename=\"{os.path.basename(file_path)}\"")
+            handler.end_headers()
+
+            with open(file_path, "rb") as file_obj:
+                while True:
+                    chunk = file_obj.read(ctx.stream_chunk_size)
+                    if not chunk:
+                        break
+                    handler.wfile.write(chunk)
+        except Exception as e:
+            handler.send_error(500, f"Error: {e}")
+        return True
+
+    if path.startswith("/video"):
+        parsed = urlparse(path)
+        raw_path = parse_qs(parsed.query).get("path", [""])[0]
+        file_path = ctx.resolve_client_path_fn(unquote(raw_path))
+
+        if not file_path or not os.path.isfile(file_path):
+            handler.send_error(404, "File not found")
+            return True
+        if not ctx.is_target_allowed_fn(file_path):
+            handler.send_error(403, "Access denied")
+            return True
+
+        mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        if not mime_type.startswith("video/"):
+            handler.send_error(415, "Video preview is only supported for video files")
+            return True
+
+        try:
+            stream_inline_media(handler, file_path, mime_type, ctx.stream_chunk_size)
+        except Exception as e:
+            handler.send_error(500, f"Error: {e}")
+        return True
+
+    if path.startswith("/audio"):
+        parsed = urlparse(path)
+        raw_path = parse_qs(parsed.query).get("path", [""])[0]
+        file_path = ctx.resolve_client_path_fn(unquote(raw_path))
+
+        if not file_path or not os.path.isfile(file_path):
+            handler.send_error(404, "File not found")
+            return True
+        if not ctx.is_target_allowed_fn(file_path):
+            handler.send_error(403, "Access denied")
+            return True
+
+        mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        if not mime_type.startswith("audio/"):
+            handler.send_error(415, "Audio preview is only supported for audio files")
+            return True
+
+        try:
+            stream_inline_media(handler, file_path, mime_type, ctx.stream_chunk_size)
+        except Exception as e:
+            handler.send_error(500, f"Error: {e}")
+        return True
+
+    if path.startswith("/pdf"):
+        parsed = urlparse(path)
+        raw_path = parse_qs(parsed.query).get("path", [""])[0]
+        file_path = ctx.resolve_client_path_fn(unquote(raw_path))
+
+        if not file_path or not os.path.isfile(file_path):
+            handler.send_error(404, "File not found")
+            return True
+        if not ctx.is_target_allowed_fn(file_path):
+            handler.send_error(403, "Access denied")
+            return True
+
+        mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        if mime_type != "application/pdf":
+            handler.send_error(415, "PDF preview is only supported for PDF files")
+            return True
+
+        try:
+            stream_inline_media(handler, file_path, mime_type, ctx.stream_chunk_size)
+        except Exception as e:
+            handler.send_error(500, f"Error: {e}")
+        return True
+
+    if path.startswith("/docx"):
+        parsed = urlparse(path)
+        raw_path = parse_qs(parsed.query).get("path", [""])[0]
+        file_path = ctx.resolve_client_path_fn(unquote(raw_path))
+
+        if not file_path or not os.path.isfile(file_path):
+            handler.send_error(404, "File not found")
+            return True
+        if not ctx.is_target_allowed_fn(file_path):
+            handler.send_error(403, "Access denied")
+            return True
+
+        mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        allowed = {
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/msword",
+        }
+        if mime_type not in allowed:
+            handler.send_error(415, "Word preview is only supported for Word document files")
+            return True
+
+        try:
+            file_size = os.path.getsize(file_path)
+            handler.send_response(200)
+            handler.send_header("Content-type", mime_type)
+            handler.send_header("Content-Length", str(file_size))
+            handler.send_header("Content-Disposition", f"inline; filename=\"{os.path.basename(file_path)}\"")
+            handler.end_headers()
+
+            with open(file_path, "rb") as file_obj:
+                while True:
+                    chunk = file_obj.read(ctx.stream_chunk_size)
+                    if not chunk:
+                        break
+                    handler.wfile.write(chunk)
+        except Exception as e:
+            handler.send_error(500, f"Error: {e}")
+        return True
+
+    if path.startswith("/sheet"):
+        parsed = urlparse(path)
+        raw_path = parse_qs(parsed.query).get("path", [""])[0]
+        file_path = ctx.resolve_client_path_fn(unquote(raw_path))
+
+        if not file_path or not os.path.isfile(file_path):
+            handler.send_error(404, "File not found")
+            return True
+        if not ctx.is_target_allowed_fn(file_path):
+            handler.send_error(403, "Access denied")
+            return True
+
+        mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        allowed = {
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel",
+            "text/csv",
+            "application/csv",
+        }
+        if mime_type not in allowed:
+            handler.send_error(415, "Spreadsheet preview is only supported for sheet files")
+            return True
+
+        try:
+            file_size = os.path.getsize(file_path)
+            handler.send_response(200)
+            handler.send_header("Content-type", mime_type)
+            handler.send_header("Content-Length", str(file_size))
+            handler.send_header("Content-Disposition", f"inline; filename=\"{os.path.basename(file_path)}\"")
+            handler.end_headers()
+
+            with open(file_path, "rb") as file_obj:
+                while True:
+                    chunk = file_obj.read(ctx.stream_chunk_size)
+                    if not chunk:
+                        break
+                    handler.wfile.write(chunk)
+        except Exception as e:
+            handler.send_error(500, f"Error: {e}")
+        return True
+
+    if path.startswith("/download?"):
+        parsed = urlparse(path)
+        query = parse_qs(parsed.query)
+        raw_path = query.get("path", [""])[0]
+        task_id = query.get("task_id", [""])[0] or None
+        hash_requested = parse_bool(query.get("hash", ["0"])[0])
+        file_path = ctx.resolve_client_path_fn(unquote(raw_path))
+        if not os.path.isfile(file_path):
+            if task_id:
+                fail_task(task_id, "File not found")
+            handler.send_error(404, "File not found")
+            return True
+        if not ctx.is_target_allowed_fn(file_path):
+            if task_id:
+                fail_task(task_id, "Access denied")
+            handler.send_error(403, "Access denied")
+            return True
+        stream_download(handler, file_path, os.path.basename(file_path), ctx, task_id=task_id, hash_requested=hash_requested)
+        return True
+
+    if path.startswith("/download/"):
+        file_name = path[len("/download/"):]
+        file_path = ctx.resolve_client_path_fn(f"{ctx.upload_folder}/{unquote(file_name)}")
+        if os.path.isfile(file_path):
+            if not ctx.is_target_allowed_fn(file_path):
+                handler.send_error(403, "Access denied")
+                return True
+            stream_download(handler, file_path, os.path.basename(file_path), ctx, task_id=None, hash_requested=False)
+        else:
+            handler.send_error(404, "File not found")
+        return True
+
+    return False
+
+
+def handle_post_request(handler: BaseHTTPRequestHandler, ctx: ServerContext):
+    parsed = urlparse(handler.path)
+
+    if parsed.path == "/upload-raw":
+        if not ctx.allow_uploads:
+            send_json(handler, 403, {"error": "Uploads are disabled in this mode"})
+            return True
+        _handle_upload_raw(handler, parsed, ctx)
+        return True
+
+    if parsed.path == "/zip-download":
+        _handle_zip_download(handler, parsed, ctx)
+        return True
+
+    if parsed.path == "/mkdir":
+        if not ctx.allow_uploads:
+            send_json(handler, 403, {"error": "Folder creation is disabled because uploads are off"})
+            return True
+        _handle_mkdir(handler, ctx)
+        return True
+
+    if parsed.path == "/rename":
+        if not ctx.allow_uploads:
+            send_json(handler, 403, {"error": "Rename is disabled because uploads are off"})
+            return True
+        _handle_rename(handler, ctx)
+        return True
+
+    if parsed.path == "/delete":
+        if not ctx.allow_uploads:
+            send_json(handler, 403, {"error": "Delete is disabled because uploads are off"})
+            return True
+        _handle_delete(handler, ctx)
+        return True
+
+    if parsed.path == "/move":
+        if not ctx.allow_uploads:
+            send_json(handler, 403, {"error": "Move is disabled because uploads are off"})
+            return True
+        _handle_move(handler, ctx)
+        return True
+
+    if parsed.path == "/bulk-delete":
+        if not ctx.allow_uploads:
+            send_json(handler, 403, {"error": "Bulk delete is disabled because uploads are off"})
+            return True
+        _handle_bulk_delete(handler, parsed, ctx)
+        return True
+
+    if parsed.path == "/bulk-move":
+        if not ctx.allow_uploads:
+            send_json(handler, 403, {"error": "Bulk move is disabled because uploads are off"})
+            return True
+        _handle_bulk_move(handler, parsed, ctx)
+        return True
+
+    return False
+
+
+def _read_json_body(handler: BaseHTTPRequestHandler):
+    content_length = int(handler.headers.get("Content-Length", "0"))
+    if content_length <= 0:
+        return None, "Missing request body"
+    try:
+        payload = json.loads(handler.rfile.read(content_length).decode("utf-8"))
+    except Exception:
+        return None, "Invalid JSON body"
+    return payload, None
+
+
+def _resolve_manage_source_path(ctx: ServerContext, raw_path):
+    if raw_path is None:
+        return None, "Missing path"
+    source_path = ctx.resolve_client_path_fn(unquote(str(raw_path)))
+    if source_path == ctx.upload_root:
+        return None, "Operation on root folder is not allowed"
+    if not os.path.exists(source_path):
+        return None, "Source path not found"
+    return source_path, None
+
+
+def _resolve_manage_destination_dir(ctx: ServerContext, raw_path):
+    if raw_path is None:
+        return None, "Missing destination"
+    dest_dir = ctx.resolve_client_path_fn(unquote(str(raw_path)))
+    if not os.path.isdir(dest_dir):
+        return None, "Destination folder not found"
+    return dest_dir, None
+
+
+def _move_single_path(ctx: ServerContext, source_path, destination_dir):
+    source_abs = os.path.abspath(source_path)
+    dest_abs = os.path.abspath(destination_dir)
+
+    if source_abs == ctx.upload_root:
+        raise ValueError("Operation on root folder is not allowed")
+    if source_abs == dest_abs:
+        raise ValueError("Cannot move an item into itself")
+
+    if os.path.isdir(source_abs) and dest_abs.startswith(source_abs + os.sep):
+        raise ValueError("Cannot move a folder into its own subfolder")
+
+    target_name = os.path.basename(source_abs)
+    target_candidate = os.path.join(dest_abs, target_name)
+    is_dir = os.path.isdir(source_abs)
+
+    if os.path.exists(target_candidate):
+        target_candidate = get_unique_target_path(dest_abs, target_name, is_dir)
+
+    shutil.move(source_abs, target_candidate)
+    ctx.move_allowed_paths_fn(source_abs, target_candidate)
+    ctx.allow_new_path_for_session_fn(target_candidate)
+    return target_candidate
+
+
+def _normalize_bulk_paths(ctx: ServerContext, raw_paths):
+    if not isinstance(raw_paths, list):
+        return [], "paths must be an array"
+
+    unique = []
+    seen = set()
+    for raw in raw_paths:
+        source_path, error = _resolve_manage_source_path(ctx, raw)
+        if error:
+            return [], error
+        source_abs = os.path.abspath(source_path)
+        if source_abs in seen:
+            continue
+        seen.add(source_abs)
+        unique.append(source_abs)
+
+    unique.sort(key=len)
+    filtered = []
+    for path in unique:
+        if any(path.startswith(parent + os.sep) for parent in filtered):
+            continue
+        filtered.append(path)
+    return filtered, None
+
+
+def _handle_upload_raw(handler: BaseHTTPRequestHandler, parsed_url, ctx: ServerContext):
+    query = parse_qs(parsed_url.query)
+    target_path = ctx.resolve_client_path_fn(unquote(query.get("path", [ctx.upload_folder])[0]))
+    file_name = sanitize_filename(unquote(query.get("filename", ["upload.bin"])[0]))
+    task_id = query.get("task_id", [""])[0] or create_task("upload", "Upload started")
+    hash_requested = parse_bool(query.get("hash", ["0"])[0])
+
+    if not os.path.isdir(target_path):
+        send_json(handler, 400, {"error": "Target folder not found"})
+        fail_task(task_id, "Target folder not found")
+        return
+
+    content_length = int(handler.headers.get("Content-Length", "0"))
+    if content_length <= 0:
+        send_json(handler, 400, {"error": "Empty upload payload"})
+        fail_task(task_id, "Empty upload payload")
+        return
+
+    if content_length > ctx.max_upload_bytes:
+        send_json(handler, 413, {"error": "Upload too large"})
+        fail_task(task_id, "Upload too large")
+        return
+
+    file_path = get_unique_file_path(target_path, file_name)
+    bytes_written = 0
+    hasher = hashlib.sha256() if hash_requested else None
+
+    try:
+        update_task_progress(task_id, bytes_done=0, total_bytes=content_length, phase="uploading", message="Uploading")
+        with open(file_path, "wb") as out:
+            remaining = content_length
+            while remaining > 0:
+                read_size = min(ctx.stream_chunk_size, remaining)
+                chunk = handler.rfile.read(read_size)
+                if not chunk:
+                    break
+                out.write(chunk)
+                bytes_written += len(chunk)
+                remaining -= len(chunk)
+                if hasher:
+                    hasher.update(chunk)
+                update_task_progress(task_id, bytes_done=bytes_written, total_bytes=content_length, phase="uploading", message="Uploading")
+
+        if bytes_written != content_length:
+            raise IOError("Upload interrupted")
+
+        digest = hasher.hexdigest() if hasher else None
+        finish_task(task_id, message="Upload completed", hash_sha256=digest)
+        ctx.allow_new_path_for_session_fn(file_path)
+        send_json(
+            handler,
+            200,
+            {
+                "ok": True,
+                "task_id": task_id,
+                "name": os.path.basename(file_path),
+                "path": ctx.to_web_path_fn(file_path),
+                "size": bytes_written,
+                "sha256": digest,
+            },
+        )
+    except Exception as e:
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+        fail_task(task_id, str(e))
+        send_json(handler, 500, {"error": str(e), "task_id": task_id})
+
+
+def _handle_zip_download(handler: BaseHTTPRequestHandler, parsed_url, ctx: ServerContext):
+    content_length = int(handler.headers.get("Content-Length", "0"))
+    if content_length <= 0:
+        send_json(handler, 400, {"error": "Missing request body"})
+        return
+
+    try:
+        payload = json.loads(handler.rfile.read(content_length).decode("utf-8"))
+    except Exception:
+        send_json(handler, 400, {"error": "Invalid JSON body"})
+        return
+
+    task_id = parse_qs(parsed_url.query).get("task_id", [""])[0] or create_task("zip", "ZIP started")
+    paths = payload.get("paths") or []
+    archive_name = sanitize_filename(payload.get("archive_name") or "archive.zip")
+    if not archive_name.lower().endswith(".zip"):
+        archive_name += ".zip"
+
+    files = ctx.collect_files_for_paths_fn(paths)
+    if not files:
+        fail_task(task_id, "No valid files selected")
+        send_json(handler, 400, {"error": "No valid files selected"})
+        return
+
+    total_bytes = sum(size for _, _, size in files)
+    update_task_progress(task_id, bytes_done=0, total_bytes=total_bytes, phase="zipping", message="Building ZIP")
+
+    temp_zip_path = None
+    processed = 0
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as temp_zip:
+            temp_zip_path = temp_zip.name
+
+        with ZipFile(temp_zip_path, "w") as zip_ref:
+            for file_abs, arcname, size in files:
+                zip_ref.write(file_abs, arcname=arcname)
+                processed += size
+                update_task_progress(task_id, bytes_done=processed, total_bytes=total_bytes, phase="zipping", message="Building ZIP")
+
+        zip_size = os.path.getsize(temp_zip_path)
+        handler.send_response(200)
+        handler.send_header("Content-Disposition", f"attachment; filename=\"{archive_name}\"")
+        handler.send_header("Content-type", "application/zip")
+        handler.send_header("Content-Length", str(zip_size))
+        handler.end_headers()
+
+        sent = 0
+        with open(temp_zip_path, "rb") as zf:
+            while True:
+                chunk = zf.read(ctx.stream_chunk_size)
+                if not chunk:
+                    break
+                handler.wfile.write(chunk)
+                sent += len(chunk)
+                update_task_progress(task_id, bytes_done=sent, total_bytes=zip_size, phase="downloading", message="Downloading ZIP")
+
+        finish_task(task_id, message="ZIP download completed")
+    except (BrokenPipeError, ConnectionResetError):
+        fail_task(task_id, "Client disconnected")
+    except Exception as e:
+        fail_task(task_id, str(e))
+        if not handler.wfile.closed:
+            send_json(handler, 500, {"error": str(e)})
+    finally:
+        if temp_zip_path and os.path.exists(temp_zip_path):
+            try:
+                os.remove(temp_zip_path)
+            except OSError:
+                pass
+
+
+def _handle_mkdir(handler: BaseHTTPRequestHandler, ctx: ServerContext):
+    payload, error = _read_json_body(handler)
+    if error:
+        send_json(handler, 400, {"error": error})
+        return
+
+    target_path = ctx.resolve_client_path_fn(unquote(payload.get("path", ctx.upload_folder)))
+    if not os.path.isdir(target_path):
+        send_json(handler, 400, {"error": "Target folder not found"})
+        return
+
+    folder_name = sanitize_folder_name(payload.get("name", ""))
+    if not folder_name:
+        send_json(handler, 400, {"error": "Invalid folder name"})
+        return
+
+    new_dir = get_unique_dir_path(target_path, folder_name)
+    try:
+        os.makedirs(new_dir, exist_ok=False)
+    except OSError as e:
+        send_json(handler, 500, {"error": str(e)})
+        return
+
+    ctx.allow_new_path_for_session_fn(new_dir)
+    send_json(handler, 200, {"ok": True, "name": os.path.basename(new_dir), "path": ctx.to_web_path_fn(new_dir)})
+
+
+def _handle_rename(handler: BaseHTTPRequestHandler, ctx: ServerContext):
+    payload, error = _read_json_body(handler)
+    if error:
+        send_json(handler, 400, {"error": error})
+        return
+
+    source_path, error = _resolve_manage_source_path(ctx, payload.get("path"))
+    if error:
+        send_json(handler, 400, {"error": error})
+        return
+
+    is_dir = os.path.isdir(source_path)
+    new_name = sanitize_entry_name(payload.get("new_name"), is_dir=is_dir)
+    if not new_name:
+        send_json(handler, 400, {"error": "Invalid new name"})
+        return
+
+    source_abs = os.path.abspath(source_path)
+    source_parent = os.path.dirname(source_abs)
+    target_path = os.path.abspath(os.path.join(source_parent, new_name))
+
+    if target_path == source_abs:
+        send_json(handler, 200, {"ok": True, "name": os.path.basename(source_abs), "path": ctx.to_web_path_fn(source_abs)})
+        return
+
+    if target_path == ctx.upload_root or not target_path.startswith(ctx.upload_root + os.sep):
+        send_json(handler, 400, {"error": "Invalid rename target"})
+        return
+
+    if os.path.exists(target_path):
+        target_path = get_unique_target_path(source_parent, new_name, is_dir)
+
+    try:
+        os.rename(source_abs, target_path)
+        ctx.move_allowed_paths_fn(source_abs, target_path)
+        ctx.allow_new_path_for_session_fn(target_path)
+    except OSError as e:
+        send_json(handler, 500, {"error": str(e)})
+        return
+
+    send_json(handler, 200, {"ok": True, "name": os.path.basename(target_path), "path": ctx.to_web_path_fn(target_path)})
+
+
+def _handle_delete(handler: BaseHTTPRequestHandler, ctx: ServerContext):
+    payload, error = _read_json_body(handler)
+    if error:
+        send_json(handler, 400, {"error": error})
+        return
+
+    source_path, error = _resolve_manage_source_path(ctx, payload.get("path"))
+    if error:
+        send_json(handler, 400, {"error": error})
+        return
+
+    source_abs = os.path.abspath(source_path)
+    try:
+        if os.path.isdir(source_abs):
+            shutil.rmtree(source_abs)
+        else:
+            os.remove(source_abs)
+        ctx.remove_allowed_paths_under_fn(source_abs)
+    except OSError as e:
+        send_json(handler, 500, {"error": str(e)})
+        return
+
+    send_json(handler, 200, {"ok": True})
+
+
+def _handle_move(handler: BaseHTTPRequestHandler, ctx: ServerContext):
+    payload, error = _read_json_body(handler)
+    if error:
+        send_json(handler, 400, {"error": error})
+        return
+
+    source_path, error = _resolve_manage_source_path(ctx, payload.get("path"))
+    if error:
+        send_json(handler, 400, {"error": error})
+        return
+
+    destination_dir, error = _resolve_manage_destination_dir(ctx, payload.get("destination"))
+    if error:
+        send_json(handler, 400, {"error": error})
+        return
+
+    try:
+        target_path = _move_single_path(ctx, source_path, destination_dir)
+    except ValueError as e:
+        send_json(handler, 400, {"error": str(e)})
+        return
+    except OSError as e:
+        send_json(handler, 500, {"error": str(e)})
+        return
+
+    send_json(handler, 200, {"ok": True, "name": os.path.basename(target_path), "path": ctx.to_web_path_fn(target_path)})
+
+
+def _handle_bulk_delete(handler: BaseHTTPRequestHandler, parsed_url, ctx: ServerContext):
+    payload, error = _read_json_body(handler)
+    if error:
+        send_json(handler, 400, {"error": error})
+        return
+
+    paths, error = _normalize_bulk_paths(ctx, payload.get("paths", []))
+    if error:
+        send_json(handler, 400, {"error": error})
+        return
+    if not paths:
+        send_json(handler, 400, {"error": "No valid paths selected"})
+        return
+
+    task_id = parse_qs(parsed_url.query).get("task_id", [""])[0] or create_task("bulk-delete", "Bulk delete started")
+    total_units = sum(count_path_units(path) for path in paths)
+    total_units = max(total_units, len(paths))
+    done_units = 0
+    deleted_count = 0
+
+    update_task_progress(task_id, bytes_done=0, total_bytes=total_units, phase="deleting", message="Deleting items")
+
+    try:
+        for path in paths:
+            units = max(count_path_units(path), 1)
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+            ctx.remove_allowed_paths_under_fn(path)
+            done_units += units
+            deleted_count += 1
+            update_task_progress(task_id, bytes_done=done_units, total_bytes=total_units, phase="deleting", message=f"Deleted {deleted_count}/{len(paths)}")
+    except OSError as e:
+        fail_task(task_id, str(e))
+        send_json(handler, 500, {"error": str(e), "task_id": task_id})
+        return
+
+    finish_task(task_id, message=f"Deleted {deleted_count} item(s)")
+    send_json(handler, 200, {"ok": True, "task_id": task_id, "deleted": deleted_count})
+
+
+def _handle_bulk_move(handler: BaseHTTPRequestHandler, parsed_url, ctx: ServerContext):
+    payload, error = _read_json_body(handler)
+    if error:
+        send_json(handler, 400, {"error": error})
+        return
+
+    paths, error = _normalize_bulk_paths(ctx, payload.get("paths", []))
+    if error:
+        send_json(handler, 400, {"error": error})
+        return
+    if not paths:
+        send_json(handler, 400, {"error": "No valid paths selected"})
+        return
+
+    destination_dir, error = _resolve_manage_destination_dir(ctx, payload.get("destination"))
+    if error:
+        send_json(handler, 400, {"error": error})
+        return
+
+    task_id = parse_qs(parsed_url.query).get("task_id", [""])[0] or create_task("bulk-move", "Bulk move started")
+    total_units = sum(count_path_units(path) for path in paths)
+    total_units = max(total_units, len(paths))
+    done_units = 0
+    moved_items = []
+
+    update_task_progress(task_id, bytes_done=0, total_bytes=total_units, phase="moving", message="Moving items")
+
+    try:
+        for path in paths:
+            units = max(count_path_units(path), 1)
+            target_path = _move_single_path(ctx, path, destination_dir)
+            moved_items.append({"name": os.path.basename(target_path), "path": ctx.to_web_path_fn(target_path)})
+            done_units += units
+            update_task_progress(task_id, bytes_done=done_units, total_bytes=total_units, phase="moving", message=f"Moved {len(moved_items)}/{len(paths)}")
+    except ValueError as e:
+        fail_task(task_id, str(e))
+        send_json(handler, 400, {"error": str(e), "task_id": task_id})
+        return
+    except OSError as e:
+        fail_task(task_id, str(e))
+        send_json(handler, 500, {"error": str(e), "task_id": task_id})
+        return
+
+    finish_task(task_id, message=f"Moved {len(moved_items)} item(s)")
+    send_json(handler, 200, {"ok": True, "task_id": task_id, "moved": len(moved_items), "items": moved_items})
+
+import os
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+
+UPLOAD_FOLDER = "shared_files"
+MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(MODULE_DIR, ".."))
+WORKSPACE_UPLOAD_ROOT = os.path.abspath(os.path.join(PROJECT_ROOT, UPLOAD_FOLDER))
+LEGACY_UPLOAD_ROOT = os.path.abspath(os.path.join(MODULE_DIR, UPLOAD_FOLDER))
+UPLOAD_ROOT = WORKSPACE_UPLOAD_ROOT if os.path.isdir(WORKSPACE_UPLOAD_ROOT) else LEGACY_UPLOAD_ROOT
+FAVICON_CANDIDATES = [
+    os.path.abspath(os.path.join(PROJECT_ROOT, "Images", "favicon.ico")),
+    os.path.abspath(os.path.join(MODULE_DIR, "Images", "favicon.ico")),
+]
+FAVICON_PATH = next((path for path in FAVICON_CANDIDATES if os.path.isfile(path)), None)
+
+os.makedirs(UPLOAD_ROOT, exist_ok=True)
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB hard safety cap
+STREAM_CHUNK_SIZE = 1024 * 1024  # 1 MB
+
+# Ask permission once at server start
+ALLOW_UPLOADS = input("Give uploading permissions (Y/N): ").strip().lower() == 'y'
+if ALLOW_UPLOADS:
+    ALLOW_DOWNLOADS = input("Do you wanna make your files available for download? (Y/N): ").strip().lower() == 'y'
+else:
+    ALLOW_DOWNLOADS = True
+ALLOWED_PATHS = set()
+
+
+def allow_new_path_for_session(abs_path):
+    """Allow newly created/uploaded items in current restricted upload session."""
+    if ALLOW_UPLOADS and (not ALLOW_DOWNLOADS or ALLOWED_PATHS):
+        ALLOWED_PATHS.add(os.path.abspath(abs_path))
+
+
+def remove_allowed_paths_under(abs_path):
+    global ALLOWED_PATHS
+    if not ALLOWED_PATHS:
+        return
+    source = os.path.abspath(abs_path)
+    prefix = source + os.sep
+    ALLOWED_PATHS = {p for p in ALLOWED_PATHS if p != source and not p.startswith(prefix)}
+
+
+def move_allowed_paths(old_abs_path, new_abs_path):
+    global ALLOWED_PATHS
+    if not ALLOWED_PATHS:
+        return
+
+    old_abs = os.path.abspath(old_abs_path)
+    new_abs = os.path.abspath(new_abs_path)
+    old_prefix = old_abs + os.sep
+    updated = set()
+
+    for allowed in ALLOWED_PATHS:
+        if allowed == old_abs:
+            updated.add(new_abs)
+            continue
+        if allowed.startswith(old_prefix):
+            rel = os.path.relpath(allowed, old_abs)
+            updated.add(os.path.abspath(os.path.join(new_abs, rel)))
+            continue
+        updated.add(allowed)
+
+    ALLOWED_PATHS = updated
+
+
+def app_collect_files_for_paths(client_paths):
+    return core_access.collect_files_for_paths(
+        client_paths=client_paths,
+        upload_root=UPLOAD_ROOT,
+        resolve_client_path_fn=app_resolve_client_path,
+        is_target_allowed_fn=app_is_target_allowed,
+    )
+
+
+def app_is_target_allowed(abs_path):
+    return core_access.is_target_allowed(
+        abs_path=abs_path,
+        allow_uploads=ALLOW_UPLOADS,
+        allow_downloads=ALLOW_DOWNLOADS,
+        allowed_paths=ALLOWED_PATHS,
+    )
+
+
+def app_is_path_visible(abs_path):
+    return core_access.is_path_visible(
+        abs_path=abs_path,
+        upload_root=UPLOAD_ROOT,
+        allow_uploads=ALLOW_UPLOADS,
+        allow_downloads=ALLOW_DOWNLOADS,
+        allowed_paths=ALLOWED_PATHS,
+    )
+
+def app_get_lan_ip():
+    return core_access.get_lan_ip()
+
+def app_to_web_path(abs_path):
+    return core_access.to_web_path(abs_path, UPLOAD_ROOT, UPLOAD_FOLDER)
+
+def app_resolve_client_path(raw_path=None):
+    return core_access.resolve_client_path(raw_path, UPLOAD_ROOT, UPLOAD_FOLDER)
+
+
+def app_list_shareable_entries():
+    return core_access.list_shareable_entries(UPLOAD_ROOT)
+
+
+def app_get_download_only_allowlist():
+    entries = app_list_shareable_entries()
+    if not entries:
+        return set()
+    return cli_access_selector(entries)
+
+def app_build_folder_tree(path=None):
+    if path is None:
+        path = UPLOAD_ROOT
+    return core_access.build_folder_tree(
+        path=path,
+        upload_root=UPLOAD_ROOT,
+        upload_folder=UPLOAD_FOLDER,
+        is_path_visible_fn=app_is_path_visible,
+    )
+
+def app_get_folder_contents(path=None):
+    if path is None:
+        path = UPLOAD_ROOT
+    return core_access.get_folder_contents(
+        path=path,
+        upload_root=UPLOAD_ROOT,
+        upload_folder=UPLOAD_FOLDER,
+        is_path_visible_fn=app_is_path_visible,
+        is_likely_text_file_fn=is_likely_text_file,
+        is_image_file_fn=is_image_file,
+        is_video_file_fn=is_video_file,
+        is_audio_file_fn=is_audio_file,
+        is_pdf_file_fn=is_pdf_file,
+        is_word_file_fn=is_word_file,
+        is_sheet_file_fn=is_sheet_file,
+    )
+
+
+SERVER_CTX = ServerContext(
+    upload_folder=UPLOAD_FOLDER,
+    upload_root=UPLOAD_ROOT,
+    allow_uploads=ALLOW_UPLOADS,
+    allow_downloads=ALLOW_DOWNLOADS,
+    max_upload_bytes=MAX_UPLOAD_BYTES,
+    stream_chunk_size=STREAM_CHUNK_SIZE,
+    resolve_client_path_fn=app_resolve_client_path,
+    to_web_path_fn=app_to_web_path,
+    is_target_allowed_fn=app_is_target_allowed,
+    is_path_visible_fn=app_is_path_visible,
+    get_folder_contents_fn=app_get_folder_contents,
+    build_folder_tree_fn=app_build_folder_tree,
+    collect_files_for_paths_fn=app_collect_files_for_paths,
+    allow_new_path_for_session_fn=allow_new_path_for_session,
+    remove_allowed_paths_under_fn=remove_allowed_paths_under,
+    move_allowed_paths_fn=move_allowed_paths,
+    is_likely_text_file_fn=is_likely_text_file,
+)
+
+
+class CustomHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.startswith("/favicon.ico"):
+            if not FAVICON_PATH:
+                self.send_error(404, "Favicon not found")
+                return
+
+            try:
+                with open(FAVICON_PATH, "rb") as icon_file:
+                    icon_bytes = icon_file.read()
+                self.send_response(200)
+                self.send_header("Content-type", "image/x-icon")
+                self.send_header("Content-Length", str(len(icon_bytes)))
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.end_headers()
+                self.wfile.write(icon_bytes)
+            except OSError:
+                self.send_error(500, "Unable to load favicon")
+            return
+
+        if self.path == "/":
+            self.send_response(200)
+            self.send_header("Content-type", "text/html; charset=utf-8")
+            self.end_headers()
+            
+            html = render_index_html(
+                UPLOAD_FOLDER,
+                ALLOW_UPLOADS,
+                ALLOW_DOWNLOADS,
+                ALLOWED_PATHS,
+            )
+            self.wfile.write(html.encode("utf-8"))
+        else:
+            if not handle_get_request(self, SERVER_CTX):
+                self.send_error(404, "Not Found")
+
+    def do_POST(self):
+        if not handle_post_request(self, SERVER_CTX):
+            self.send_error(404, "Not Found")
+
+
+def main():
+    global ALLOWED_PATHS
+    print("=== HTTP File Sharing Server ===")
+    print(f"[i] Share root: {UPLOAD_ROOT}")
+
+    should_select_downloads = not ALLOW_UPLOADS or (ALLOW_UPLOADS and ALLOW_DOWNLOADS)
+
+    if should_select_downloads:
+        if ALLOW_UPLOADS:
+            print("[i] Select files/folders clients can download.")
+        else:
+            print("[i] Download-only mode: select files/folders clients can access.")
+        selected = app_get_download_only_allowlist()
+        if not selected:
+            print("[-] No items selected. Server not started.")
+            return
+        ALLOWED_PATHS = {os.path.abspath(p) for p in selected}
+        print(f"[+] Download access set with {len(ALLOWED_PATHS)} selected items.")
+    elif ALLOW_UPLOADS and not ALLOW_DOWNLOADS:
+        print("[i] Downloads disabled. Server will start with no files available for download.")
+
+    server_ip = app_get_lan_ip()
+    port = 8000
+
+    httpd = ThreadingHTTPServer(("0.0.0.0", port), CustomHandler)
+    print(f"[+] Server running at http://{server_ip}:{port}")
+    print("[+] Share this link with others in your LAN.")
+
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\n[-] Server stopped.")
+
+if __name__ == "__main__":
+
+    main()
+
