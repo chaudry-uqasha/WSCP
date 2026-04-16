@@ -2171,17 +2171,134 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         ui.content.appendChild(actions);
                     }}
 
-                    async function startFileDownload(filePath, fileName, withHash) {{
-                        const taskId = await createTask('download');
+                    function triggerDownloadLink(filePath, fileName, taskId = null, withHash = false) {{
+                        let href = '/download?path=' + encodeURIComponent(filePath);
+                        if (taskId) href += '&task_id=' + encodeURIComponent(taskId);
+                        if (withHash) href += '&hash=1';
 
                         const a = document.createElement('a');
-                        a.href = '/download?path=' + encodeURIComponent(filePath) +
-                            '&task_id=' + encodeURIComponent(taskId) +
-                            '&hash=' + (withHash ? '1' : '0');
+                        a.href = href;
                         a.download = fileName;
                         document.body.appendChild(a);
                         a.click();
                         a.remove();
+                    }}
+
+                    function delay(ms) {{
+                        return new Promise(resolve => setTimeout(resolve, ms));
+                    }}
+
+                    function openBulkDownloadDialog(fileItems, folderItems = []) {{
+                        const totalFiles = Array.isArray(fileItems) ? fileItems.length : 0;
+                        if (totalFiles === 0) {{
+                            showDialog('No files selected for individual download.');
+                            return;
+                        }}
+
+                        const ui = createDialogContainer('Download Selected Files', totalFiles + ' file(s) selected');
+
+                        if (folderItems.length > 0) {{
+                            const note = document.createElement('p');
+                            note.style.margin = '0 0 12px 0';
+                            note.textContent = folderItems.length + ' folder(s) are selected and will be skipped here. Use ZIP for folders.';
+                            ui.content.appendChild(note);
+                        }}
+
+                        const options = document.createElement('div');
+                        options.className = 'dialog-row';
+                        const hashLabel = document.createElement('label');
+                        const hashCheck = document.createElement('input');
+                        hashCheck.type = 'checkbox';
+                        hashLabel.appendChild(hashCheck);
+                        hashLabel.appendChild(document.createTextNode('Calculate SHA-256 for each file'));
+                        options.appendChild(hashLabel);
+                        ui.content.appendChild(options);
+
+                        const actions = document.createElement('div');
+                        actions.className = 'dialog-actions';
+                        const cancelBtn = document.createElement('button');
+                        cancelBtn.className = 'ghost-btn';
+                        cancelBtn.textContent = 'Cancel';
+                        cancelBtn.onclick = function() {{ ui.dialogDiv.remove(); }};
+                        const startBtn = document.createElement('button');
+                        startBtn.textContent = 'Download Files';
+                        startBtn.onclick = async function() {{
+                            ui.dialogDiv.remove();
+                            await startBulkFileDownloads(fileItems, hashCheck.checked);
+                        }};
+                        actions.appendChild(cancelBtn);
+                        actions.appendChild(startBtn);
+                        ui.content.appendChild(actions);
+                    }}
+
+                    async function startBulkFileDownloads(fileItems, withHash) {{
+                        const total = Array.isArray(fileItems) ? fileItems.length : 0;
+                        if (total === 0) return;
+
+                        const progress = createProgressDialog('Downloading Files', total + ' file(s)');
+                        let successCount = 0;
+                        const failed = [];
+                        const hashes = [];
+
+                        for (let i = 0; i < total; i += 1) {{
+                            const item = fileItems[i];
+                            const step = '(' + (i + 1) + '/' + total + ')';
+                            progress.setSpeed('');
+                            progress.setStatus('Downloading ' + step + ': ' + item.name);
+                            progress.setProgress((i / total) * 100);
+
+                            try {{
+                                if (withHash) {{
+                                    const taskId = await createTask('download');
+                                    triggerDownloadLink(item.path, item.name, taskId, true);
+                                    const task = await waitForTaskCompletion(taskId, {{
+                                        setProgress: (p) => progress.setProgress(((i + (p / 100)) / total) * 100),
+                                        setStatus: (msg) => progress.setStatus('Downloading ' + step + ': ' + item.name + (msg ? ' - ' + msg : '')),
+                                        setSpeed: (msg) => progress.setSpeed(msg),
+                                    }});
+                                    successCount += 1;
+                                    if (task.hash_sha256) {{
+                                        hashes.push(item.name + ': ' + task.hash_sha256);
+                                    }} else {{
+                                        hashes.push(item.name + ': Hash unavailable');
+                                    }}
+                                }} else {{
+                                    triggerDownloadLink(item.path, item.name);
+                                    successCount += 1;
+                                    progress.setProgress(((i + 1) / total) * 100);
+                                    await delay(220);
+                                }}
+                            }} catch (e) {{
+                                failed.push(item.name + ': ' + e.message);
+                            }}
+                        }}
+
+                        progress.setSpeed('');
+                        progress.setProgress(100);
+
+                        if (failed.length === 0) {{
+                            progress.setStatus('Completed');
+                        }} else {{
+                            progress.setStatus('Completed with errors');
+                        }}
+
+                        let resultText = 'Downloaded ' + successCount + '/' + total + ' file(s).';
+                        if (withHash && hashes.length > 0) {{
+                            const hashPreview = hashes.slice(0, 2).join(' | ');
+                            const moreHashes = hashes.length > 2 ? ' | +' + (hashes.length - 2) + ' more hash(es)' : '';
+                            resultText += ' ' + hashPreview + moreHashes;
+                        }}
+                        if (failed.length > 0) {{
+                            const failPreview = failed.slice(0, 2).join(' | ');
+                            const moreFails = failed.length > 2 ? ' | +' + (failed.length - 2) + ' more error(s)' : '';
+                            resultText += ' ' + failPreview + moreFails;
+                        }}
+                        progress.setResult(resultText);
+                    }}
+
+                    async function startFileDownload(filePath, fileName, withHash) {{
+                        const taskId = await createTask('download');
+                        triggerDownloadLink(filePath, fileName, taskId, withHash);
 
                         if (!withHash) return;
 
@@ -3049,8 +3166,11 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     document.getElementById('bulk-download').addEventListener('click', async function() {{
                         if (selectedItems.size === 0) return;
                         const selected = Array.from(selectedItems);
-                        if (selected.length === 1) {{
-                            const one = itemMap.get(selected[0]);
+                        const selectedEntries = selected.map(path => itemMap.get(path)).filter(Boolean);
+                        if (selectedEntries.length === 0) return;
+
+                        if (selectedEntries.length === 1) {{
+                            const one = selectedEntries[0];
                             if (one && !one.is_dir) {{
                                 openDownloadDialog(one.path, one.name);
                                 return;
@@ -3062,7 +3182,19 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                                 return;
                             }}
                         }}
-                        startZipDownload(selected, 'bulk-download.zip');
+
+                        const fileEntries = selectedEntries.filter(entry => !entry.is_dir);
+                        const folderEntries = selectedEntries.filter(entry => entry.is_dir);
+
+                        if (fileEntries.length === 0) {{
+                            startZipDownload(selected, 'bulk-download.zip');
+                            return;
+                        }}
+
+                        openBulkDownloadDialog(
+                            fileEntries.map(entry => ({{ path: entry.path, name: entry.name }})),
+                            folderEntries
+                        );
                     }});
 
                     document.getElementById('upload-btn').addEventListener('click', function() {{
