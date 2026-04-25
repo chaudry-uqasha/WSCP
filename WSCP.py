@@ -295,10 +295,18 @@ def resolve_client_path(raw_path, upload_root, upload_folder):
     return upload_root
 
 
-def is_target_allowed(abs_path, allow_uploads, allow_downloads, allowed_paths):
+def is_target_allowed(
+    abs_path,
+    allow_uploads,
+    allow_downloads,
+    allowed_paths,
+    restrict_to_allowed_paths=False,
+):
     if not allow_downloads:
         return False
     if not allowed_paths:
+        if restrict_to_allowed_paths:
+            return False
         return allow_uploads
 
     norm = os.path.abspath(abs_path)
@@ -308,7 +316,14 @@ def is_target_allowed(abs_path, allow_uploads, allow_downloads, allowed_paths):
     return False
 
 
-def is_path_visible(abs_path, upload_root, allow_uploads, allow_downloads, allowed_paths):
+def is_path_visible(
+    abs_path,
+    upload_root,
+    allow_uploads,
+    allow_downloads,
+    allowed_paths,
+    restrict_to_allowed_paths=False,
+):
     norm = os.path.abspath(abs_path)
 
     if allow_uploads and not allow_downloads:
@@ -329,11 +344,17 @@ def is_path_visible(abs_path, upload_root, allow_uploads, allow_downloads, allow
     if not allow_downloads:
         return norm == upload_root
 
-    if allow_uploads and not allowed_paths:
-        return True
     if not allowed_paths:
-        return False
-    if is_target_allowed(norm, allow_uploads, allow_downloads, allowed_paths):
+        if allow_uploads and not restrict_to_allowed_paths:
+            return True
+        return norm == upload_root
+    if is_target_allowed(
+        norm,
+        allow_uploads,
+        allow_downloads,
+        allowed_paths,
+        restrict_to_allowed_paths=restrict_to_allowed_paths,
+    ):
         return True
 
     if os.path.isdir(norm):
@@ -5233,11 +5254,12 @@ if ALLOW_UPLOADS:
 else:
     ALLOW_DOWNLOADS = True
 ALLOWED_PATHS = set()
+RESTRICT_DOWNLOADS_TO_SELECTED = False
 
 
 def allow_new_path_for_session(abs_path):
     """Allow newly created/uploaded items in current restricted upload session."""
-    if ALLOW_UPLOADS and (not ALLOW_DOWNLOADS or ALLOWED_PATHS):
+    if ALLOW_UPLOADS and (not ALLOW_DOWNLOADS or RESTRICT_DOWNLOADS_TO_SELECTED):
         ALLOWED_PATHS.add(os.path.abspath(abs_path))
 
 
@@ -5288,6 +5310,7 @@ def app_is_target_allowed(abs_path):
         allow_uploads=ALLOW_UPLOADS,
         allow_downloads=ALLOW_DOWNLOADS,
         allowed_paths=ALLOWED_PATHS,
+        restrict_to_allowed_paths=RESTRICT_DOWNLOADS_TO_SELECTED,
     )
 
 
@@ -5298,6 +5321,7 @@ def app_is_path_visible(abs_path):
         allow_uploads=ALLOW_UPLOADS,
         allow_downloads=ALLOW_DOWNLOADS,
         allowed_paths=ALLOWED_PATHS,
+        restrict_to_allowed_paths=RESTRICT_DOWNLOADS_TO_SELECTED,
     )
 
 def app_get_lan_ip():
@@ -5415,7 +5439,7 @@ class CustomHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    global ALLOWED_PATHS
+    global ALLOWED_PATHS, RESTRICT_DOWNLOADS_TO_SELECTED
     print("=== HTTP File Sharing Server ===")
     print(f"[i] Share root: {UPLOAD_ROOT}")
 
@@ -5435,15 +5459,19 @@ def main():
                     return
                 print("[i] No items selected. Starting with uploads enabled.")
                 ALLOWED_PATHS = set()
+                RESTRICT_DOWNLOADS_TO_SELECTED = False
             else:
                 ALLOWED_PATHS = {os.path.abspath(p) for p in selected}
+                RESTRICT_DOWNLOADS_TO_SELECTED = True
                 print(f"[+] Download access set with {len(ALLOWED_PATHS)} selected items.")
         else:
             if not ALLOW_UPLOADS:
                 print("[-] shared_files is empty. Add files first, then restart.")
                 return
+            RESTRICT_DOWNLOADS_TO_SELECTED = False
             print("[i] shared_files is empty. Server will start and new uploads will be available.")
     elif ALLOW_UPLOADS and not ALLOW_DOWNLOADS:
+        RESTRICT_DOWNLOADS_TO_SELECTED = True
         print("[i] Downloads disabled. Server will start with no files available for download.")
 
     server_ip = app_get_lan_ip()
