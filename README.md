@@ -18,7 +18,7 @@ The media preview style (PDF, image, audio, video viewing) was inspired by Copy 
 - Built-in previews: text, image, video, audio, PDF
 - Single and bulk download with optional SHA-256 support
 - Search, responsive web UI, and LAN-friendly sharing
-
+- Drag & Drop
 ## Run
 
 ```bash

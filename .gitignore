@@ -1,0 +1,16 @@
+shared_files/
+__pycache__/
+.venv/
+
+# Ignore legacy multi-file runtime
+wscp_core/
+main.py
+
+# Build and packaging outputs
+build/
+dist/
+*.spec
+
+# Runtime temp outputs
+.wscp_tmp/
+.wscp_unpack/

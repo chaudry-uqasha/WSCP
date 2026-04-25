@@ -804,8 +804,10 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
             <head>
                 <meta charset="UTF-8">
                 <title>WSCP - File Sharing Server</title>
-                <link rel="icon" type="image/x-icon" href="/favicon.ico?v=3">
-                <link rel="shortcut icon" href="/favicon.ico?v=3">
+                <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=4">
+                <link rel="icon" type="image/x-icon" sizes="any" href="/favicon.ico?v=4">
+                <link rel="shortcut icon" href="/favicon.ico?v=4">
+                <link rel="apple-touch-icon" href="/favicon.png?v=4">
                 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700&display=swap" rel="stylesheet">
                 <style>
                     * {{
@@ -2166,6 +2168,8 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     let autoSyncBusy = false;
                     let folderLoadSeq = 0;
                     let treeLoadSeq = 0;
+                    let consecutiveSyncFailures = 0;
+                    let disconnectedState = false;
 
                     function ensureWriteEnabled() {{
                         if (!uploadsEnabled) {{
@@ -2295,24 +2299,65 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         return url + sep + '_ts=' + Date.now();
                     }}
 
-                    async function syncCurrentView(syncTree = true) {{
-                        await loadFolderContents(currentPath);
-                        if (syncTree) {{
-                            await loadFolderTree();
+                    function markSyncSuccess() {{
+                        consecutiveSyncFailures = 0;
+                    }}
+
+                    function enterDisconnectedState() {{
+                        if (disconnectedState) return;
+                        disconnectedState = true;
+                        stopAutoSync();
+                        document.body.innerHTML = '';
+                        document.body.style.background = '#000000';
+                        setTimeout(() => {{
+                            window.location.replace(appendNoCache('/'));
+                        }}, 10);
+                    }}
+
+                    function markSyncFailure() {{
+                        consecutiveSyncFailures += 1;
+                        if (consecutiveSyncFailures >= 2) {{
+                            enterDisconnectedState();
                         }}
+                    }}
+
+                    async function syncCurrentView(syncTree = true) {{
+                        const contentsOk = await loadFolderContents(currentPath);
+                        if (!contentsOk) return false;
+                        if (syncTree) {{
+                            const treeOk = await loadFolderTree();
+                            return !!treeOk;
+                        }}
+                        return true;
+                    }}
+
+                    async function pingServerAlive() {{
+                        const res = await fetch(appendNoCache('/folder-tree?_ping=1'), {{ cache: 'no-store' }});
+                        return res.ok;
                     }}
 
                     function startAutoSync() {{
                         if (autoSyncTimer) clearInterval(autoSyncTimer);
                         autoSyncTimer = setInterval(async () => {{
                             if (autoSyncBusy || document.hidden) return;
-                            if (manageMode || selectedItems.size > 0) return;
-                            if (document.querySelector('.custom-dialog, .modal.show')) return;
                             autoSyncBusy = true;
                             try {{
-                                await syncCurrentView(true);
+                                const pauseUiSync =
+                                    manageMode ||
+                                    selectedItems.size > 0 ||
+                                    !!document.querySelector('.custom-dialog, .modal.show');
+
+                                const ok = pauseUiSync
+                                    ? await pingServerAlive()
+                                    : await syncCurrentView(true);
+
+                                if (ok) {{
+                                    markSyncSuccess();
+                                }} else {{
+                                    markSyncFailure();
+                                }}
                             }} catch (_) {{
-                                // Best-effort background refresh.
+                                markSyncFailure();
                             }} finally {{
                                 autoSyncBusy = false;
                             }}
@@ -3200,12 +3245,14 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                             const res = await fetch(appendNoCache('/folder-tree'), {{ cache: 'no-store' }});
                             if (!res.ok) throw new Error('Failed to load folder tree');
                             const tree = await res.json();
-                            if (requestSeq !== treeLoadSeq) return;
+                            if (requestSeq !== treeLoadSeq) return true;
                             const sidebarMount = document.getElementById('sidebar');
                             sidebarMount.innerHTML = '';
                             renderTree(tree, sidebarMount);
+                            return true;
                         }} catch (e) {{
                             console.error('Error loading folder tree:', e);
+                            return false;
                         }}
                     }}
                     
@@ -3301,11 +3348,13 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                             const res = await fetch(appendNoCache('/files-metadata?path=' + encodeURIComponent(path)), {{ cache: 'no-store' }});
                             if (!res.ok) throw new Error('Failed to open folder');
                             const items = await res.json();
-                            if (requestSeq !== folderLoadSeq) return;
+                            if (requestSeq !== folderLoadSeq) return true;
                             currentFolderItems = Array.isArray(items) ? items : [];
                             applySearchFilter();
+                            return true;
                         }} catch (e) {{
                             console.error('Error loading folder contents:', e);
+                            return false;
                         }}
                     }}
 
@@ -4252,9 +4301,14 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         applyResponsiveLayout(false);
                     }});
 
-                    document.addEventListener('visibilitychange', () => {{
+                    document.addEventListener('visibilitychange', async () => {{
                         if (!document.hidden) {{
-                            syncCurrentView(true);
+                            const ok = await syncCurrentView(true);
+                            if (ok) {{
+                                markSyncSuccess();
+                            }} else {{
+                                markSyncFailure();
+                            }}
                         }}
                     }});
 
@@ -5459,9 +5513,12 @@ SERVER_CTX = ServerContext(
 
 class CustomHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path.startswith("/favicon.ico"):
+        if self.path.startswith("/favicon.ico") or self.path.startswith("/favicon.png"):
             try:
-                icon_path = FAVICON_PATH or FAVICON_PNG_PATH
+                wants_png = self.path.startswith("/favicon.png")
+                icon_path = FAVICON_PNG_PATH if wants_png else FAVICON_PATH
+                if not icon_path:
+                    icon_path = FAVICON_PATH or FAVICON_PNG_PATH
                 if not icon_path:
                     self.send_error(404, "Favicon not found")
                     return
@@ -5475,15 +5532,19 @@ class CustomHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(icon_bytes)))
                 self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
                 self.send_header("Pragma", "no-cache")
+                self.send_header("Expires", "0")
                 self.end_headers()
                 self.wfile.write(icon_bytes)
             except OSError:
                 self.send_error(500, "Unable to load favicon")
             return
 
-        if self.path == "/":
+        if self.path == "/" or self.path.startswith("/?"):
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
             self.end_headers()
             
             html = render_index_html(
