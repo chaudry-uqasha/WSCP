@@ -2161,6 +2161,11 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     let audioFilesInCurrentFolder = [];
                     let activeAudioIndex = -1;
                     const INTERNAL_MOVE_MIME = 'application/x-wscp-items';
+                    const AUTO_SYNC_INTERVAL_MS = 2500;
+                    let autoSyncTimer = null;
+                    let autoSyncBusy = false;
+                    let folderLoadSeq = 0;
+                    let treeLoadSeq = 0;
 
                     function ensureWriteEnabled() {{
                         if (!uploadsEnabled) {{
@@ -2277,11 +2282,47 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         const res = await fetch(url, {{
                             method: 'POST',
                             headers: {{ 'Content-Type': 'application/json' }},
+                            cache: 'no-store',
                             body: JSON.stringify(payload),
                         }});
                         const data = await res.json();
                         if (!res.ok) throw new Error(data.error || 'Operation failed');
                         return data;
+                    }}
+
+                    function appendNoCache(url) {{
+                        const sep = url.includes('?') ? '&' : '?';
+                        return url + sep + '_ts=' + Date.now();
+                    }}
+
+                    async function syncCurrentView(syncTree = true) {{
+                        await loadFolderContents(currentPath);
+                        if (syncTree) {{
+                            await loadFolderTree();
+                        }}
+                    }}
+
+                    function startAutoSync() {{
+                        if (autoSyncTimer) clearInterval(autoSyncTimer);
+                        autoSyncTimer = setInterval(async () => {{
+                            if (autoSyncBusy || document.hidden) return;
+                            if (manageMode || selectedItems.size > 0) return;
+                            if (document.querySelector('.custom-dialog, .modal.show')) return;
+                            autoSyncBusy = true;
+                            try {{
+                                await syncCurrentView(true);
+                            }} catch (_) {{
+                                // Best-effort background refresh.
+                            }} finally {{
+                                autoSyncBusy = false;
+                            }}
+                        }}, AUTO_SYNC_INTERVAL_MS);
+                    }}
+
+                    function stopAutoSync() {{
+                        if (!autoSyncTimer) return;
+                        clearInterval(autoSyncTimer);
+                        autoSyncTimer = null;
                     }}
 
                     function createDialogContainer(title, subtitle = '') {{
@@ -2380,14 +2421,14 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     }}
 
                     async function createTask(kind) {{
-                        const res = await fetch('/task/new?kind=' + encodeURIComponent(kind));
+                        const res = await fetch(appendNoCache('/task/new?kind=' + encodeURIComponent(kind)), {{ cache: 'no-store' }});
                         if (!res.ok) throw new Error('Failed to create task');
                         const payload = await res.json();
                         return payload.task_id;
                     }}
 
                     async function getTask(taskId) {{
-                        const res = await fetch('/progress?task_id=' + encodeURIComponent(taskId));
+                        const res = await fetch(appendNoCache('/progress?task_id=' + encodeURIComponent(taskId)), {{ cache: 'no-store' }});
                         if (!res.ok) throw new Error('Progress unavailable');
                         return await res.json();
                     }}
@@ -2813,7 +2854,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
 
                         let tree;
                         try {{
-                            const res = await fetch('/folder-tree');
+                            const res = await fetch(appendNoCache('/folder-tree'), {{ cache: 'no-store' }});
                             if (!res.ok) throw new Error('Failed to load folders');
                             tree = await res.json();
                         }} catch (e) {{
@@ -3137,6 +3178,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     }}
                     
                     async function loadFolderTree() {{
+                        const requestSeq = ++treeLoadSeq;
                         try {{
                             const sidebarEl = document.getElementById('sidebar');
                             if (sidebarEl) {{
@@ -3155,8 +3197,10 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                                 expandedTreePaths = openPaths;
                             }}
 
-                            const res = await fetch('/folder-tree');
+                            const res = await fetch(appendNoCache('/folder-tree'), {{ cache: 'no-store' }});
+                            if (!res.ok) throw new Error('Failed to load folder tree');
                             const tree = await res.json();
+                            if (requestSeq !== treeLoadSeq) return;
                             const sidebarMount = document.getElementById('sidebar');
                             sidebarMount.innerHTML = '';
                             renderTree(tree, sidebarMount);
@@ -3251,11 +3295,13 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     }}
                     
                     async function loadFolderContents(path) {{
+                        const requestSeq = ++folderLoadSeq;
                         currentPath = path;
                         try {{
-                            const res = await fetch('/files-metadata?path=' + encodeURIComponent(path));
+                            const res = await fetch(appendNoCache('/files-metadata?path=' + encodeURIComponent(path)), {{ cache: 'no-store' }});
                             if (!res.ok) throw new Error('Failed to open folder');
                             const items = await res.json();
+                            if (requestSeq !== folderLoadSeq) return;
                             currentFolderItems = Array.isArray(items) ? items : [];
                             applySearchFilter();
                         }} catch (e) {{
@@ -3266,7 +3312,6 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     function applySearchFilter() {{
                         const query = (searchInput?.value || '').trim().toLowerCase();
                         searchQuery = query;
-                        selectedItems.clear();
 
                         if (!query) {{
                             renderTable(currentFolderItems);
@@ -3336,6 +3381,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                             checkbox.type = 'checkbox';
                             checkbox.className = 'row-checkbox';
                             checkbox.dataset.path = item.path;
+                            checkbox.checked = selectedItems.has(item.path);
                             checkbox.addEventListener('change', updateBulkActions);
                             checkboxCell.appendChild(checkbox);
                             row.appendChild(checkboxCell);
@@ -3588,6 +3634,8 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                                 openRenameDialog(this.dataset.path, this.dataset.name);
                             }});
                         }});
+
+                        updateBulkActions();
                     }}
                     
                     function formatSize(bytes) {{
@@ -4204,6 +4252,16 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         applyResponsiveLayout(false);
                     }});
 
+                    document.addEventListener('visibilitychange', () => {{
+                        if (!document.hidden) {{
+                            syncCurrentView(true);
+                        }}
+                    }});
+
+                    window.addEventListener('beforeunload', () => {{
+                        stopAutoSync();
+                    }});
+
                     document.addEventListener('dragenter', (e) => {{
                         if (!uploadsEnabled) return;
                         if (!isExternalFilesDrag(e)) return;
@@ -4260,18 +4318,21 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     
                     applyResponsiveLayout(true);
 
-                    // Load on page load
-                    if (document.readyState === 'loading') {{
-                        window.addEventListener('load', () => {{
-                            loadFolderTree();
-                            loadFolderContents('{UPLOAD_FOLDER}');
-                            updateBreadcrumb('{UPLOAD_FOLDER}');
-                        }});
-                    }} else {{
-                        // DOMContentLoaded already fired
+                    function bootWorkspace() {{
                         loadFolderTree();
                         loadFolderContents('{UPLOAD_FOLDER}');
                         updateBreadcrumb('{UPLOAD_FOLDER}');
+                        startAutoSync();
+                    }}
+
+                    // Load on page load
+                    if (document.readyState === 'loading') {{
+                        window.addEventListener('load', () => {{
+                            bootWorkspace();
+                        }});
+                    }} else {{
+                        // DOMContentLoaded already fired
+                        bootWorkspace();
                     }}
                 </script>
             </body>
@@ -4315,6 +4376,9 @@ class ServerContext:
 def send_json(handler: BaseHTTPRequestHandler, status_code, payload):
     handler.send_response(status_code)
     handler.send_header("Content-type", "application/json")
+    handler.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+    handler.send_header("Pragma", "no-cache")
+    handler.send_header("Expires", "0")
     handler.end_headers()
     handler.wfile.write(json.dumps(payload).encode("utf-8"))
 
@@ -4420,7 +4484,7 @@ def stream_inline_media(handler: BaseHTTPRequestHandler, file_path, mime_type, c
 def handle_get_request(handler: BaseHTTPRequestHandler, ctx: ServerContext):
     path = handler.path
 
-    if path == "/folder-tree":
+    if path == "/folder-tree" or path.startswith("/folder-tree?"):
         send_json(handler, 200, ctx.build_folder_tree_fn())
         return True
 
