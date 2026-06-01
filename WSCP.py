@@ -2440,6 +2440,30 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
 
                         const actions = document.createElement('div');
                         actions.className = 'dialog-actions';
+                        
+                        let isPaused = false;
+                        let uploadState = null;
+                        
+                        const pauseBtn = document.createElement('button');
+                        pauseBtn.className = 'ghost-btn';
+                        pauseBtn.textContent = 'Pause';
+                        pauseBtn.style.display = 'none';
+                        pauseBtn.onclick = function() {{
+                            if (!uploadState) return;
+                            if (!isPaused) {{
+                                // Pause
+                                if (uploadState.pause) uploadState.pause();
+                                isPaused = true;
+                                pauseBtn.textContent = 'Resume';
+                            }} else {{
+                                // Resume
+                                if (uploadState.resume) uploadState.resume();
+                                isPaused = false;
+                                pauseBtn.textContent = 'Pause';
+                            }}
+                        }};
+                        actions.appendChild(pauseBtn);
+                        
                         const closeBtn = document.createElement('button');
                         closeBtn.className = 'ghost-btn';
                         closeBtn.textContent = 'Close';
@@ -2457,6 +2481,8 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                             setSpeed: (msg) => speed.textContent = msg || '',
                             setResult: (msg) => result.textContent = msg || '',
                             close: () => ui.dialogDiv.remove(),
+                            setPauseButton: (show) => pauseBtn.style.display = show ? 'inline-block' : 'none',
+                            setUploadState: (state) => uploadState = state,
                         }};
                     }}
 
@@ -2494,18 +2520,130 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         throw new Error('Operation timeout');
                     }}
 
-                    function xhrUpload(url, file, onProgress) {{
+                    function xhrUploadWithRetry(url, file, onProgress, maxRetries = 3) {{
+                        let isPaused = false;
+                        let currentXhr = null;
+                        let bytesUploaded = 0;
+                        let lastProgressBytes = 0;
+                        let retries = 0;
+                        let resolvePromise = null;
+                        let rejectPromise = null;
+                        const stateKey = 'upload_state_' + url;
+                        
+                        // Check if resuming from paused state
+                        const pausedState = sessionStorage.getItem(stateKey);
+                        if (pausedState) {{
+                            try {{
+                                const state = JSON.parse(pausedState);
+                                bytesUploaded = state.bytesUploaded || 0;
+                                lastProgressBytes = bytesUploaded;
+                                console.log('Resuming upload from offset: ' + bytesUploaded);
+                            }} catch (e) {{
+                                console.warn('Failed to restore upload state');
+                            }}
+                        }}
+                        
+                        const uploadState = {{
+                            pause: () => {{
+                                isPaused = true;
+                                if (currentXhr) currentXhr.abort();
+                                // Save bytes uploaded to sessionStorage
+                                sessionStorage.setItem(stateKey, JSON.stringify({{
+                                    url: url,
+                                    bytesUploaded: lastProgressBytes,
+                                    totalBytes: file.size,
+                                    filename: file.name,
+                                    pausedAt: Date.now()
+                                }}));
+                                console.log('Upload paused at ' + lastProgressBytes + ' bytes');
+                            }},
+                            resume: () => {{
+                                isPaused = false;
+                                sessionStorage.removeItem(stateKey);
+                                attemptUpload();
+                            }}
+                        }};
+                        
+                        async function attemptUpload() {{
+                            try {{
+                                const responseText = await xhrUpload(url + '&offset=' + bytesUploaded, file, onProgress, (xhr, progressCallback) => {{
+                                    currentXhr = xhr;
+                                    // Track progress bytes
+                                    if (progressCallback) {{
+                                        progressCallback((loaded) => {{
+                                            lastProgressBytes = bytesUploaded + loaded;
+                                        }});
+                                    }}
+                                }});
+                                if (resolvePromise) resolvePromise(responseText);
+                                sessionStorage.removeItem(stateKey);
+                            }} catch (error) {{
+                                if (isPaused) {{
+                                    return;
+                                }}
+                                if (error.resumable && retries < maxRetries) {{
+                                    retries++;
+                                    const delay = Math.min(1000 * Math.pow(2, retries - 1), 10000);
+                                    console.warn('Upload failed, retrying in ' + delay + 'ms (attempt ' + retries + '/' + maxRetries + ')');
+                                    setTimeout(attemptUpload, delay);
+                                }} else {{
+                                    if (rejectPromise) rejectPromise(error);
+                                }}
+                            }}
+                        }}
+                        
+                        const promise = new Promise((resolve, reject) => {{
+                            resolvePromise = resolve;
+                            rejectPromise = reject;
+                            attemptUpload();
+                        }});
+                        
+                        return {{
+                            promise: promise,
+                            uploadState: uploadState
+                        }};
+                    }}
+
+                    function xhrUpload(url, file, onProgress, onXhrCreated = null) {{
                         return new Promise((resolve, reject) => {{
                             const xhr = new XMLHttpRequest();
                             xhr.open('POST', url, true);
+                            xhr.timeout = 300000;
+                            
+                            let lastReportedLoaded = 0;
+                            
+                            if (onXhrCreated) {{
+                                const trackProgress = (progressTracker) => {{
+                                    // progressTracker receives current loaded bytes from this attempt
+                                }};
+                                onXhrCreated(xhr, trackProgress);
+                            }}
+                            
                             xhr.onload = function() {{
-                                if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.responseText);
-                                else reject(new Error('Upload failed (' + xhr.status + ')'));
+                                if (xhr.status >= 200 && xhr.status < 300) {{
+                                    resolve(xhr.responseText);
+                                }} else if (xhr.status === 408 || xhr.status === 504) {{
+                                    const error = new Error('Upload timeout - connection lost');
+                                    error.resumable = true;
+                                    reject(error);
+                                }} else {{
+                                    reject(new Error('Upload failed (' + xhr.status + ')'));
+                                }}
                             }};
-                            xhr.onerror = function() {{ reject(new Error('Upload failed')); }};
+                            xhr.onerror = function() {{
+                                const error = new Error('Network error during upload');
+                                error.resumable = true;
+                                reject(error);
+                            }};
+                            xhr.ontimeout = function() {{
+                                const error = new Error('Upload timeout');
+                                error.resumable = true;
+                                reject(error);
+                            }};
                             xhr.upload.onprogress = function(event) {{
                                 if (event.lengthComputable && onProgress) onProgress(event.loaded, event.total);
                             }};
+                            
                             xhr.send(file);
                         }});
                     }}
@@ -2587,16 +2725,21 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                     async function uploadSingleFile(file, withHash, autoCloseOnSuccess = false) {{
                         const taskId = await createTask('upload');
                         const progress = createProgressDialog('Uploading', file.name);
+                        progress.setPauseButton(true);
                         try {{
                             const uploadUrl = '/upload-raw?task_id=' + encodeURIComponent(taskId) +
                                 '&path=' + encodeURIComponent(currentPath) +
                                 '&filename=' + encodeURIComponent(file.name) +
                                 '&hash=' + (withHash ? '1' : '0');
 
-                            const responseText = await xhrUpload(uploadUrl, file, (loaded, total) => {{
+                            const {{promise, uploadState}} = xhrUploadWithRetry(uploadUrl, file, (loaded, total) => {{
                                 progress.setProgress((loaded / Math.max(total, 1)) * 100);
                                 progress.setStatus('Uploading...');
                             }});
+                            
+                            progress.setUploadState(uploadState);
+
+                            const responseText = await promise;
 
                             const task = await waitForTaskCompletion(taskId, progress);
                             const response = JSON.parse(responseText);
@@ -2624,6 +2767,7 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                         }}
 
                         const progress = createProgressDialog('Uploading Files', files.length + ' file(s)');
+                        progress.setPauseButton(true);
                         let successCount = 0;
                         const failed = [];
 
@@ -2640,10 +2784,14 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                                     '&filename=' + encodeURIComponent(file.name) +
                                     '&hash=' + (withHash ? '1' : '0');
 
-                                await xhrUpload(uploadUrl, file, (loaded, total) => {{
+                                const {{promise, uploadState}} = xhrUploadWithRetry(uploadUrl, file, (loaded, total) => {{
                                     progress.setProgress((loaded / Math.max(total, 1)) * 100);
                                     progress.setStatus('Uploading (' + (i + 1) + '/' + files.length + '): ' + file.name);
                                 }});
+                                
+                                progress.setUploadState(uploadState);
+
+                                await promise;
 
                                 await waitForTaskCompletion(taskId, {{
                                     setProgress: (p) => progress.setProgress(p),
@@ -4960,6 +5108,7 @@ def _handle_upload_raw(handler: BaseHTTPRequestHandler, parsed_url, ctx: ServerC
     file_name = sanitize_filename(unquote(query.get("filename", ["upload.bin"])[0]))
     task_id = query.get("task_id", [""])[0] or create_task("upload", "Upload started")
     hash_requested = parse_bool(query.get("hash", ["0"])[0])
+    resume_offset = int(query.get("offset", ["0"])[0])
 
     if not os.path.isdir(target_path):
         send_json(handler, 400, {"error": "Target folder not found"})
@@ -4978,27 +5127,64 @@ def _handle_upload_raw(handler: BaseHTTPRequestHandler, parsed_url, ctx: ServerC
         return
 
     file_path = get_unique_file_path(target_path, file_name)
-    bytes_written = 0
+    bytes_written = resume_offset
     hasher = hashlib.sha256() if hash_requested else None
+    start_time = time.time()
+    last_progress_time = start_time
+    socket_timeout = 30  # socket timeout in seconds
 
     try:
-        update_task_progress(task_id, bytes_done=0, total_bytes=content_length, phase="uploading", message="Uploading")
-        with open(file_path, "wb") as out:
+        # Set socket timeout for slow connection handling
+        try:
+            handler.connection.settimeout(socket_timeout)
+        except:
+            pass  # Socket timeout setting might not be available on all platforms
+        
+        update_task_progress(task_id, bytes_done=resume_offset, total_bytes=content_length + resume_offset, phase="uploading", message="Uploading")
+        
+        # Open file: append mode if resuming, write mode otherwise
+        file_mode = "a+b" if resume_offset > 0 else "wb"
+        with open(file_path, file_mode) as out:
+            if resume_offset > 0:
+                # For resume, seek to the exact offset
+                out.seek(0, 2)  # Seek to end to verify file size
+                current_size = out.tell()
+                if current_size < resume_offset:
+                    # File is smaller than expected offset, this is an error
+                    raise IOError(f"Resume offset {resume_offset} exceeds file size {current_size}")
+                if current_size > resume_offset:
+                    # File is larger, truncate it
+                    out.truncate(resume_offset)
+                out.seek(resume_offset)
+            
             remaining = content_length
             while remaining > 0:
-                read_size = min(ctx.stream_chunk_size, remaining)
-                chunk = handler.rfile.read(read_size)
-                if not chunk:
-                    break
-                out.write(chunk)
-                bytes_written += len(chunk)
-                remaining -= len(chunk)
-                if hasher:
-                    hasher.update(chunk)
-                update_task_progress(task_id, bytes_done=bytes_written, total_bytes=content_length, phase="uploading", message="Uploading")
+                try:
+                    read_size = min(ctx.stream_chunk_size, remaining)
+                    chunk = handler.rfile.read(read_size)
+                    if not chunk:
+                        raise IOError(f"Connection lost after {bytes_written} bytes")
+                    
+                    out.write(chunk)
+                    bytes_written += len(chunk)
+                    remaining -= len(chunk)
+                    
+                    if hasher:
+                        hasher.update(chunk)
+                    
+                    # Send heartbeat every 5 seconds to keep connection alive
+                    current_time = time.time()
+                    if current_time - last_progress_time >= 5:
+                        update_task_progress(task_id, bytes_done=bytes_written, total_bytes=content_length + resume_offset, phase="uploading", message="Uploading")
+                        last_progress_time = current_time
+                
+                except socket.timeout:
+                    raise IOError(f"Socket timeout after {bytes_written} bytes - slow connection detected")
+                except Exception as chunk_err:
+                    raise IOError(f"Chunk read error: {str(chunk_err)}")
 
-        if bytes_written != content_length:
-            raise IOError("Upload interrupted")
+        if bytes_written != content_length + resume_offset:
+            raise IOError(f"Upload incomplete: {bytes_written}/{content_length + resume_offset} bytes received")
 
         digest = hasher.hexdigest() if hasher else None
         finish_task(task_id, message="Upload completed", hash_sha256=digest)
@@ -5015,14 +5201,18 @@ def _handle_upload_raw(handler: BaseHTTPRequestHandler, parsed_url, ctx: ServerC
                 "sha256": digest,
             },
         )
+    except socket.timeout as e:
+        # Keep partial file for resume - don't delete
+        fail_task(task_id, f"Upload timeout: {str(e)}")
+        send_json(handler, 408, {"error": str(e), "task_id": task_id, "bytes_received": bytes_written, "resumable": True})
     except Exception as e:
-        if os.path.exists(file_path):
+        if os.path.exists(file_path) and resume_offset == 0:
             try:
                 os.remove(file_path)
             except OSError:
                 pass
         fail_task(task_id, str(e))
-        send_json(handler, 500, {"error": str(e), "task_id": task_id})
+        send_json(handler, 500, {"error": str(e), "task_id": task_id, "bytes_received": bytes_written})
 
 
 def _handle_zip_download(handler: BaseHTTPRequestHandler, parsed_url, ctx: ServerContext):
