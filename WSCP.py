@@ -5555,12 +5555,9 @@ FAVICON_PNG_PATH = next((path for path in FAVICON_PNG_CANDIDATES if os.path.isfi
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB hard safety cap
 STREAM_CHUNK_SIZE = 1024 * 1024  # 1 MB
 
-# Ask permission once at server start
-ALLOW_UPLOADS = input("Give uploading permissions (Y/N): ").strip().lower() == 'y'
-if ALLOW_UPLOADS:
-    ALLOW_DOWNLOADS = input("Do you wanna make your files available for download? (Y/N): ").strip().lower() == 'y'
-else:
-    ALLOW_DOWNLOADS = True
+# Default values - will be set by get_mode_selection() in main()
+ALLOW_UPLOADS = False
+ALLOW_DOWNLOADS = True
 ALLOWED_PATHS = set()
 RESTRICT_DOWNLOADS_TO_SELECTED = False
 
@@ -5753,10 +5750,79 @@ class CustomHandler(BaseHTTPRequestHandler):
             self.send_error(404, "Not Found")
 
 
+def print_wscp_logo():
+    """Print stylish WSCP ASCII art logo"""
+    logo = """
+    
+    ╔═══════════════════════════════════════════════════════╗
+    ║                                                       ║
+    ║                     ▲     ◆                           ║
+    ║                    ╱ ╲   ╱ ╲                          ║
+    ║                   ╱   ╲ ╱   ╲                         ║
+    ║                  ▲     ◆     ▼                        ║
+    ║                 ╱│╲   ╱ ╲   ╱│╲                       ║
+    ║                ▼ │ ▼ ╱   ╲ ▼ │ ▲                      ║
+    ║                  │  ╱     ╲  │                        ║
+    ║                  ◆         ◆                          ║
+    ║                                                       ║
+    ║                     W S C P                           ║
+    ║              LAN File Sharing Server                  ║
+    ║                                                       ║
+    ║             Created By Chaudry Uqasha                 ║
+    ║                                                       ║
+    ╚═══════════════════════════════════════════════════════╝
+    
+    """
+    print(logo)
+
+
+def get_mode_selection():
+    """Prompt user to select upload/download mode"""
+    while True:
+        print("\n  Select Mode:\n")
+        print("  1. Upload: Enabled  │  Download: Enabled")
+        print("  2. Upload: Disabled │  Download: Enabled")
+        print("  3. Upload: Enabled  │  Download: Disabled")
+        print("  4. Quit")
+        print()
+        
+        choice = input("  Choose [1-4]: ").strip()
+        
+        if choice == "1":
+            return True, True  # allow_uploads, allow_downloads
+        elif choice == "2":
+            return False, True
+        elif choice == "3":
+            return True, False
+        elif choice == "4":
+            print("\n  Goodbye!")
+            exit(0)
+        else:
+            print("  ✗ Invalid choice. Try again.")
+
+
 def main():
-    global ALLOWED_PATHS, RESTRICT_DOWNLOADS_TO_SELECTED
-    print("=== HTTP File Sharing Server ===")
-    print(f"[i] Share root: {UPLOAD_ROOT}")
+    global ALLOWED_PATHS, RESTRICT_DOWNLOADS_TO_SELECTED, ALLOW_UPLOADS, ALLOW_DOWNLOADS
+    
+    # Print welcome screen
+    print_wscp_logo()
+    
+    # Get mode from user
+    allow_uploads, allow_downloads = get_mode_selection()
+    ALLOW_UPLOADS = allow_uploads
+    ALLOW_DOWNLOADS = allow_downloads
+    
+    print(f"\n  ✓ Mode: Upload {'ON' if allow_uploads else 'OFF'} | Download {'ON' if allow_downloads else 'OFF'}")
+    print(f"  ✓ Share root: {UPLOAD_ROOT}\n")
+    
+    # Session Logs
+    print("  ┌─ Session Logs ─────────────────────────────────────┐")
+    logs = []
+    
+    logs.append(f"[i] Initializing WSCP server...")
+    logs.append(f"[i] Upload mode: {'ENABLED' if allow_uploads else 'DISABLED'}")
+    logs.append(f"[i] Download mode: {'ENABLED' if allow_downloads else 'DISABLED'}")
+    logs.append(f"[i] Share directory: {UPLOAD_ROOT}")
 
     should_select_downloads = not ALLOW_UPLOADS or (ALLOW_UPLOADS and ALLOW_DOWNLOADS)
     has_existing_entries = _has_any_entries(UPLOAD_ROOT)
@@ -5764,42 +5830,55 @@ def main():
     if should_select_downloads:
         if has_existing_entries:
             if ALLOW_UPLOADS:
-                print("[i] Select files/folders clients can download.")
+                logs.append("[i] Selecting files/folders for download access...")
             else:
-                print("[i] Download-only mode: select files/folders clients can access.")
+                logs.append("[i] Download-only mode: selecting accessible items...")
             selected = app_get_download_only_allowlist()
             if not selected:
                 if not ALLOW_UPLOADS:
-                    print("[-] No items selected. Server not started.")
+                    logs.append("[-] No items selected. Aborting.")
+                    for log in logs:
+                        print(f"  │ {log}")
+                    print("  └─────────────────────────────────────────────────┘\n")
                     return
-                print("[i] No items selected. Starting with uploads enabled.")
+                logs.append("[✓] No items selected. Starting with uploads enabled.")
                 ALLOWED_PATHS = set()
                 RESTRICT_DOWNLOADS_TO_SELECTED = False
             else:
                 ALLOWED_PATHS = {os.path.abspath(p) for p in selected}
                 RESTRICT_DOWNLOADS_TO_SELECTED = True
-                print(f"[+] Download access set with {len(ALLOWED_PATHS)} selected items.")
+                logs.append(f"[✓] Download access granted to {len(ALLOWED_PATHS)} items")
         else:
             if not ALLOW_UPLOADS:
-                print("[-] shared_files is empty. Add files first, then restart.")
+                logs.append("[-] shared_files empty. Add files and restart.")
+                for log in logs:
+                    print(f"  │ {log}")
+                print("  └─────────────────────────────────────────────────┘\n")
                 return
             RESTRICT_DOWNLOADS_TO_SELECTED = False
-            print("[i] shared_files is empty. Server will start and new uploads will be available.")
+            logs.append("[✓] shared_files ready for uploads")
     elif ALLOW_UPLOADS and not ALLOW_DOWNLOADS:
         RESTRICT_DOWNLOADS_TO_SELECTED = True
-        print("[i] Downloads disabled. Server will start with no files available for download.")
+        logs.append("[i] Downloads disabled - upload-only mode")
 
     server_ip = app_get_lan_ip()
     port = 8000
+    logs.append(f"[✓] Network address: {server_ip}:{port}")
+    logs.append("[✓] Starting HTTP server...")
+    
+    for log in logs:
+        print(f"  │ {log}")
+    print("  └─────────────────────────────────────────────────┘\n")
 
     httpd = ThreadingHTTPServer(("0.0.0.0", port), CustomHandler)
-    print(f"[+] Server running at http://{server_ip}:{port}")
-    print("[+] Share this link with others in your LAN.")
+    print(f"  [+] Server running at http://{server_ip}:{port}")
+    print("  [+] Share this link with others in your LAN.")
+    print("  [*] Press Ctrl+C to stop.\n")
 
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\n[-] Server stopped.")
+        print("\n  [-] Server stopped. Goodbye!\n")
 
 if __name__ == "__main__":
 
