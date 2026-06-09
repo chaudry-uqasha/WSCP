@@ -8,7 +8,9 @@ WSCP is a lightweight LAN file sharing server for quick transfer between devices
 
 ## Backstory
 
-The idea started as a simpler WinSCP-like tool for local sharing during writeups and daily file movement.
+The idea started as a simpler WinSCP-like tool for local sharing as it became a hectic day to day task. 
+I was too naive to know about github/opensource or even localsend. All other tools were very complex to do a simple task like file sharing. 
+So I "Vibe/AI" Coded my own. The principle is simple "It should be STUPID SIMPLE".
 The media preview style (PDF, image, audio, video viewing) was inspired by Copy Party.
 
 ## Features
@@ -19,6 +21,7 @@ The media preview style (PDF, image, audio, video viewing) was inspired by Copy 
 - Single and bulk download with optional SHA-256 support
 - Search, responsive web UI, and LAN-friendly sharing
 - Drag & Drop
+  
 ## Run
 
 ```bash
