@@ -2614,7 +2614,11 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                             
                             if (onXhrCreated) {{
                                 const trackProgress = (progressTracker) => {{
-                                    // progressTracker receives current loaded bytes from this attempt
+                                    xhr.upload.onprogress = function(event) {{
+                                        if (event.lengthComputable && progressTracker) {{
+                                            progressTracker(event.loaded);
+                                        }}
+                                    }};
                                 }};
                                 onXhrCreated(xhr, trackProgress);
                             }}
@@ -3359,8 +3363,8 @@ def render_index_html(upload_folder, allow_uploads, allow_downloads, allowed_pat
                                     if (total > 0) progress.setProgress((loaded / total) * 100);
                                 }}
                             );
-                            saveBlob(blob, archiveName);
                             await waitForTaskCompletion(taskId, progress);
+                            saveBlob(blob, archiveName);
                             progress.setStatus('Completed');
                             progress.setProgress(100);
                             progress.setResult('ZIP download complete');
@@ -4585,6 +4589,51 @@ def send_json(handler: BaseHTTPRequestHandler, status_code, payload):
     handler.wfile.write(json.dumps(payload).encode("utf-8"))
 
 
+def _download_chunked_fallback(handler, file_obj, file_size, hasher, ctx, task_id):
+    """Fallback: chunked read/write with explicit flush for smooth streaming."""
+    CHUNK = 64 * 1024
+    bytes_sent = 0
+    last_update = 0
+    while True:
+        chunk = file_obj.read(CHUNK)
+        if not chunk:
+            break
+        handler.wfile.write(chunk)
+        handler.wfile.flush()
+        bytes_sent += len(chunk)
+        if hasher:
+            hasher.update(chunk)
+        if task_id:
+            now = time.time()
+            if now - last_update >= 0.2 or bytes_sent >= file_size:
+                update_task_progress(task_id, bytes_done=bytes_sent, total_bytes=file_size, phase="downloading", message="Downloading")
+                last_update = now
+    return bytes_sent
+
+
+def _download_sendfile(handler, file_obj, file_size, ctx, task_id):
+    """Zero-copy sendfile transfer. File must be seeked to start."""
+    sock_fd = handler.connection.fileno()
+    file_fd = file_obj.fileno()
+    offset = file_obj.tell()
+    remaining = file_size - offset
+    bytes_sent = 0
+    last_update = 0
+    while remaining > 0:
+        n = os.sendfile(sock_fd, file_fd, offset, min(65536, remaining))
+        if n == 0:
+            break
+        offset += n
+        bytes_sent += n
+        remaining -= n
+        if task_id:
+            now = time.time()
+            if now - last_update >= 0.2 or remaining == 0:
+                update_task_progress(task_id, bytes_done=bytes_sent, total_bytes=file_size, phase="downloading", message="Downloading")
+                last_update = now
+    return bytes_sent
+
+
 def stream_download(handler: BaseHTTPRequestHandler, file_path, download_name, ctx: ServerContext, task_id=None, hash_requested=False):
     file_size = os.path.getsize(file_path)
     if task_id:
@@ -4599,19 +4648,14 @@ def stream_download(handler: BaseHTTPRequestHandler, file_path, download_name, c
         handler.send_header("Content-type", content_type)
         handler.send_header("Content-Length", str(file_size))
         handler.end_headers()
+        handler.wfile.flush()
 
         bytes_sent = 0
         with open(file_path, "rb") as file_obj:
-            while True:
-                chunk = file_obj.read(ctx.stream_chunk_size)
-                if not chunk:
-                    break
-                handler.wfile.write(chunk)
-                bytes_sent += len(chunk)
-                if hasher:
-                    hasher.update(chunk)
-                if task_id:
-                    update_task_progress(task_id, bytes_done=bytes_sent, total_bytes=file_size, phase="downloading", message="Downloading")
+            if hasher or not hasattr(os, "sendfile"):
+                _download_chunked_fallback(handler, file_obj, file_size, hasher, ctx, task_id)
+            else:
+                _download_sendfile(handler, file_obj, file_size, ctx, task_id)
 
         if task_id:
             digest = hasher.hexdigest() if hasher else None
@@ -4670,16 +4714,34 @@ def stream_inline_media(handler: BaseHTTPRequestHandler, file_path, mime_type, c
     if status_code == 206:
         handler.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
     handler.end_headers()
+    handler.wfile.flush()
 
     with open(file_path, "rb") as file_obj:
         if start:
             file_obj.seek(start)
         remaining = content_length
+
+        # Use sendfile for zero-copy if available
+        if hasattr(os, "sendfile"):
+            sock_fd = handler.connection.fileno()
+            file_fd = file_obj.fileno()
+            offset = start
+            while remaining > 0:
+                n = os.sendfile(sock_fd, file_fd, offset, min(65536, remaining))
+                if n == 0:
+                    break
+                offset += n
+                remaining -= n
+            return
+
+        # Fallback: chunked read/write with flush
+        CHUNK = 64 * 1024
         while remaining > 0:
-            chunk = file_obj.read(min(chunk_size, remaining))
+            chunk = file_obj.read(min(CHUNK, remaining))
             if not chunk:
                 break
             handler.wfile.write(chunk)
+            handler.wfile.flush()
             remaining -= len(chunk)
 
 
@@ -4774,6 +4836,7 @@ def handle_get_request(handler: BaseHTTPRequestHandler, ctx: ServerContext):
                     if not chunk:
                         break
                     handler.wfile.write(chunk)
+                    handler.wfile.flush()
         except Exception as e:
             handler.send_error(500, f"Error: {e}")
         return True
@@ -4882,6 +4945,7 @@ def handle_get_request(handler: BaseHTTPRequestHandler, ctx: ServerContext):
                     if not chunk:
                         break
                     handler.wfile.write(chunk)
+                    handler.wfile.flush()
         except Exception as e:
             handler.send_error(500, f"Error: {e}")
         return True
@@ -5161,7 +5225,7 @@ def _handle_upload_raw(handler: BaseHTTPRequestHandler, parsed_url, ctx: ServerC
             while remaining > 0:
                 try:
                     read_size = min(ctx.stream_chunk_size, remaining)
-                    chunk = handler.rfile.read(read_size)
+                    chunk = handler.rfile.read1(read_size)
                     if not chunk:
                         raise IOError(f"Connection lost after {bytes_written} bytes")
                     
@@ -5261,15 +5325,36 @@ def _handle_zip_download(handler: BaseHTTPRequestHandler, parsed_url, ctx: Serve
         handler.send_header("Content-Length", str(zip_size))
         handler.end_headers()
 
+        handler.wfile.flush()
         sent = 0
         with open(temp_zip_path, "rb") as zf:
-            while True:
-                chunk = zf.read(ctx.stream_chunk_size)
-                if not chunk:
-                    break
-                handler.wfile.write(chunk)
-                sent += len(chunk)
-                update_task_progress(task_id, bytes_done=sent, total_bytes=zip_size, phase="downloading", message="Downloading ZIP")
+            if hasattr(os, "sendfile"):
+                sock_fd = handler.connection.fileno()
+                file_fd = zf.fileno()
+                last_update = 0
+                while sent < zip_size:
+                    n = os.sendfile(sock_fd, file_fd, sent, min(65536, zip_size - sent))
+                    if n == 0:
+                        break
+                    sent += n
+                    now = time.time()
+                    if now - last_update >= 0.2 or sent >= zip_size:
+                        update_task_progress(task_id, bytes_done=sent, total_bytes=zip_size, phase="downloading", message="Downloading ZIP")
+                        last_update = now
+            else:
+                last_update = 0
+                CHUNK = 64 * 1024
+                while True:
+                    chunk = zf.read(CHUNK)
+                    if not chunk:
+                        break
+                    handler.wfile.write(chunk)
+                    handler.wfile.flush()
+                    sent += len(chunk)
+                    now = time.time()
+                    if now - last_update >= 0.2 or sent >= zip_size:
+                        update_task_progress(task_id, bytes_done=sent, total_bytes=zip_size, phase="downloading", message="Downloading ZIP")
+                        last_update = now
 
         finish_task(task_id, message="ZIP download completed")
     except (BrokenPipeError, ConnectionResetError):
@@ -5553,7 +5638,7 @@ FAVICON_PNG_CANDIDATES = [os.path.abspath(os.path.join(root, "Images", "logo.png
 FAVICON_PNG_PATH = next((path for path in FAVICON_PNG_CANDIDATES if os.path.isfile(path)), None)
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB hard safety cap
-STREAM_CHUNK_SIZE = 1024 * 1024  # 1 MB
+STREAM_CHUNK_SIZE = 64 * 1024  # 64 KB - smaller for smoother streaming
 
 # Default values - will be set by get_mode_selection() in main()
 ALLOW_UPLOADS = False
@@ -5802,7 +5887,7 @@ def get_mode_selection():
 
 
 def main():
-    global ALLOWED_PATHS, RESTRICT_DOWNLOADS_TO_SELECTED, ALLOW_UPLOADS, ALLOW_DOWNLOADS
+    global ALLOWED_PATHS, RESTRICT_DOWNLOADS_TO_SELECTED, ALLOW_UPLOADS, ALLOW_DOWNLOADS, SERVER_CTX
     
     # Print welcome screen
     print_wscp_logo()
@@ -5811,6 +5896,10 @@ def main():
     allow_uploads, allow_downloads = get_mode_selection()
     ALLOW_UPLOADS = allow_uploads
     ALLOW_DOWNLOADS = allow_downloads
+
+    # Update SERVER_CTX which was created at module level with defaults
+    SERVER_CTX.allow_uploads = ALLOW_UPLOADS
+    SERVER_CTX.allow_downloads = ALLOW_DOWNLOADS
     
     print(f"\n  ✓ Mode: Upload {'ON' if allow_uploads else 'OFF'} | Download {'ON' if allow_downloads else 'OFF'}")
     print(f"  ✓ Share root: {UPLOAD_ROOT}\n")

@@ -1,0 +1,4 @@
+shared_files
+*.md
+__pycache__
+
