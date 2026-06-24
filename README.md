@@ -25,6 +25,10 @@ The media preview style (PDF, image, audio, video viewing) was inspired by Copy 
 ## Run
 
 ```bash
+pip install -r req.txt
+```
+
+```bash
 python WSCP.py
 ```
 
@@ -33,3 +37,6 @@ Then:
 1. Answer startup permission prompts.
 2. Open the printed LAN URL in your browser.
 3. Put files in `shared_files` to share immediately.
+
+
+ANNOUNCEMENT: RELEASES ARE DISCONTINUED. DIY. ;)
